@@ -1,65 +1,318 @@
 # Скажи домашку
 
-Yandex Alice voice skill that reads tomorrow's homework from СГО
-(e-mordovia.ru). Runs as a single aiohttp process with an in-memory
-cache and a background prefetch worker.
+Голосовой навык Яндекс Алисы, который рассказывает домашнее задание на следующий учебный день из электронного дневника **СГО** (Система «Сетевой город», `sgo.e-mordovia.ru`).
 
-## Architecture
+Навык работает как единый `asyncio`-процесс: `aiohttp`-вебхук принимает запросы Алисы, а фоновый воркер заранее подтягивает домашку из СГО в кеш в памяти — поэтому ответ почти всегда мгновенный и укладывается в жёсткий лимит Алисы 4,5 секунды.
+
+---
+
+## Возможности (v1)
+
+- Прослушивает следующие командные фразы и отвечает домашкой на ближайший **учебный** день (выходные и каникулы пропускаются):
+  - «что задали», «какая домашка», «домашнее задание», «дз» и похожие;
+  - «дальше» — повторяет уже загруженный ответ;
+  - любое другое сообщение — подсказка, что умеет навык.
+- Формирует голосовой ответ по интонационно-естественным правилам русского языка: числительные прописью, согласование «задания/заданий», творительный падеж для вложений.
+- Фоновая предзагрузка: домашку Алиса не «дожидается» — она уже в кеше на момент запроса.
+- Обработка ошибок: при сбое СГО навык вежливо просит попробовать позже, а не падает.
+
+Версия **v2** (планируется): оценки, свободный диалог с пользователем, полное состояние диалога (FSM), деплой с постоянным HTTPS.
+
+---
+
+## Как это устроено
 
 ```
-Alice → HTTPS (ngrok) → aiohttp webhook (aliceio Dispatcher)
-                              ↓ reads
-                         HomeworkCache (in-memory)
-                              ↑ writes
-                    PrefetchWorker (asyncio.Task)
-                              ↓ async
-                    netschoolapi-plus → СГО
+        Пользователь (Станция / приложение Алисы)
+                        │
+                        ▼
+   Яндекс.Диалоги (навык, skill_id)
+                        │  HTTPS webhook (JSON)
+                        ▼
+        https://<адрес-навыка>/alice
+                        │
+                        ▼
+        aiohttp webhook (OneSkillAiohttpRequestHandler)
+                        │
+                        ▼
+        aliceio Dispatcher (response_timeout=4.0)
+        │  ├─ start_router      (F.session.new)
+        │  ├─ homework_router   (F.command.contains …)
+        │  ├─ more_router       (F.command == "дальше")
+        │  └─ fallback_router   (catch-all)
+        │
+        │  читает / пишет
+        ▼
+   HomeworkCache (в памяти: один результат + время)
+        ▲
+        │  пишет (после каждого цикла)
+        │
+   PrefetchWorker (asyncio.Task, цикл с интервалом)
+        │
+        ▼  вызывает fetch_homework()
+   sgo.py (netschoolapi-plus → СГО: login → diary → attachments → logout)
 ```
 
-## Quick start
+### Компоненты
+
+| Модуль | Назначение |
+|--------|-----------|
+| `alice_skill/skill.py` | Сборка приложения: `create_app(config)`, `Dispatcher`, роутеры, жизненный цикл воркера, обработчики таймаута/ошибок, входная точка `main()`. |
+| `alice_skill/sgo.py` | Тонкий клиент СГО: `fetch_homework(login, password, school)` возвращает `HomeworkResult`. |
+| `alice_skill/homework.py` | Чистая логика: `next_school_day`, `collect_homework`, `format_for_voice`, русские числительные, фразы. |
+| `alice_skill/cache.py` | `HomeworkCache` — один `HomeworkResult` + время загрузки (`get`/`set`/`is_stale`). |
+| `alice_skill/worker.py` | `PrefetchWorker` — фоновая загрузка по расписанию, single-flight защита. |
+| `alice_skill/handlers/` | Роутеры и общий хелпер `answer_from_cache`. |
+
+### Поток обработки запроса
+
+1. Алиса присылает JSON на `/alice`. `Dispatcher` с `response_timeout=4.0` разбирает сообщение (при превышении 4 секунд срабатывает таймаут-обработчик).
+2. Сначала срабатывает `start_router` — но только для **новой сессии** (`F.session.new`).
+3. Если команда подходит под фильтр домашки, обработчик `answer_from_cache`:
+   - **попал в кеш** (статус `ok` или `empty`) → сразу отвечает готовым текстом, ничего не грузит;
+   - **кеш пуст или там ошибка** (`error`) → отправляет «Секунду, заглядываю в дневник. Скажи „дальше“.» и в фоне запускает обновление (`worker.refresh_now()`).
+4. «Дальше» (`more_router`, команда `дальше`) → возвращает то, что лежит в кеше (любой статус), либо подсказку, если кеша ещё нет.
+5. Всё остальное → `fallback_router` отвечает подсказкой «Я умею рассказывать домашку…».
+6. Таймаут (> 4 с) → «Не успела посмотреть в дневник…». Необработанное исключение → «Что-то пошло не так…».
+
+### Фоновая загрузка (PrefetchWorker)
+
+- При старте приложения воркер **сразу** делает первый запрос в СГО, а затем повторяет каждый `prefetch_interval` секунд.
+- Результат каждого цикла пишется в `HomeworkCache`.
+- Защита от одновременных запросов: если предыдущая загрузка ещё идёт, новая пропускается (single-flight).
+- Ошибки СГО внутри воркера не роняют процесс: в кеш кладётся результат со статусом `error`.
+
+---
+
+## Требования
+
+- Python **3.10+**
+- Доступ в интернет к `sgo.e-mordovia.ru`
+- Учётная запись ученика в СГО (логин, пароль, название школы)
+- `skill_id` навыка, созданного в [Яндекс.Диалогах](https://dialogs.yandex.ru)
+
+Зависимости (см. `requirements.txt`): `aliceio==0.2.3`, `aiohttp>=3.9.0`, `netschoolapi-plus` (форк), `pytest>=8.0.0`, `pytest-asyncio>=0.21.0`.
+
+---
+
+## Установка
 
 ```bash
+git clone https://github.com/freeuser3/alice-homework.git
+cd alice-homework
+
+# Windows
 python -m venv .venv
-.venv\Scripts\activate     # Windows
-source .venv/bin/activate  # Linux
+.venv\Scripts\activate
+# или Linux / macOS / Debian-сервер
+# python3 -m venv .venv && source .venv/bin/activate
+
 pip install -r requirements.txt
+```
+
+---
+
+## Настройка
+
+Скопируйте шаблон в рабочий файл и заполните его:
+
+```bash
 cp config.example.json config.json
-# edit config.json with your СГО credentials and skill ID
+# Windows (PowerShell):  Copy-Item config.example.json config.json
+```
+
+`config.json` **не должен попадать в git** — он добавлен в `.gitignore`, так как содержит пароль. В репозитории лежит только безобидный `config.example.json`.
+
+Настройки можно задать двумя способами (переменные окружения имеют приоритет над файлом):
+
+| Поле в `config.json` | Переменная окружения | Описание | По умолчанию |
+|----------------------|----------------------|----------|--------------|
+| `sgo.login` | `SGO_LOGIN` | Логин в СГО | — (обязательно) |
+| `sgo.password` | `SGO_PASSWORD` | Пароль в СГО | — (обязательно) |
+| `sgo.school` | `SGO_SCHOOL` | Название школы | — (обязательно) |
+| `skill_id` | `SKILL_ID` | ID навыка в Яндекс.Диалогах | — (обязательно) |
+| `prefetch_interval` | `PREFETCH_INTERVAL` | Период фоновой загрузки, секунды | `1800` (30 мин) |
+| `host` | — | Адрес привязки `aiohttp` | `127.0.0.1` |
+| `port` | — | Порт вебхука | `8000` |
+
+Пример `config.json`:
+
+```json
+{
+  "sgo": {
+    "login": "ivanov_ii",
+    "password": "<пароль>",
+    "school": "МБОУ СОШ № 1"
+  },
+  "prefetch_interval": 1800,
+  "host": "127.0.0.1",
+  "port": 8000,
+  "skill_id": "abcdef12-3456-7890-abcd-ef1234567890"
+}
+```
+
+Если `login`, `password` или `school` не заполнены, а `skill_id` отсутствует — приложение завершится с понятным `ValueError` (так мы не даём запуститься без обязательных настроек).
+
+---
+
+## Запуск (локально)
+
+```bash
 python -m alice_skill.skill
 ```
 
-## Deploy (Debian)
+Приложение поднимется на `http://127.0.0.1:8000`, вебхук навыка живёт по пути `/alice`. При старте в лог попадёт сообщение «starting prefetch worker» — сразу выполнится первая загрузка из СГО.
+
+---
+
+## Проверка без Алисы
+
+Можно отправить «сырой» запрос Алисы напрямую в вебхук, чтобы убедиться, что связка работает (упрощённый формат, настоящий набор полей уточняйте по документации aliceio / Диалогов):
 
 ```bash
-python3 -m venv ~/pyt/alice-homework/.venv
-source ~/pyt/alice-homework/.venv/bin/activate
-pip install -r requirements.txt
-cp config.example.json config.json
-# edit config.json
-nohup python -m alice_skill.skill > /tmp/alice-homework.log 2>&1 &
-
-# In another terminal:
-ngrok http 8000
-# Copy the HTTPS URL → Dialogs Console → webhook:
-#   https://<ngrok-id>.ngrok.io/alice
+curl -X POST http://127.0.0.1:8000/alice \
+  -H "Content-Type: application/json" \
+  -d '{"session":{"new":true,"session_id":"1","user_id":"1"},"version":"1.0","request":{"type":"SimpleUtterance","command":"что задали"}}'
 ```
 
-## Config
+Полноценная проверка из среды навыка — через консоль тестера в Яндекс.Диалогах (она шлёт запросы на адрес вебхука, указанный в настройках навыка).
 
-`config.json` (gitignored — use `config.example.json`):
+---
 
-| Key | Description | Default |
-|-----|-------------|---------|
-| `sgo.login` | СГО login (or `SGO_LOGIN` env) | — |
-| `sgo.password` | СГО password (or `SGO_PASSWORD` env) | — |
-| `sgo.school` | School name (or `SGO_SCHOOL` env) | — |
-| `skill_id` | Dialogs skill ID (or `SKILL_ID` env) | — |
-| `prefetch_interval` | Seconds between background fetches | `1800` |
-| `host` | aiohttp bind address | `127.0.0.1` |
-| `port` | aiohttp bind port | `8000` |
+## Как навык отвечает (голосовой формат)
 
-## Testing
+### Структура ответа
+
+- **Вступление.** Если целевой день — завтра: `На завтра, в {день недели}, N заданий.`  
+  Пример: `На завтра, в среду, два задания.`  
+  Если позже (после каникул, например): `На {день недели}, N заданий.`  
+  Пример: `На понедельник, одно задание.`
+- **Пункты.** Каждый предмет форматируется отдельно:
+  - одно задание — `Только {предмет}: {текст}.`;
+  - два задания — `Первое — …` и `Второе — …`;
+  - три и больше — `Первое — …`, далее связки `Теперь…`, `Дальше…`, `Потом…`, `Следующее…` (выбираются случайно), последний пункт — `И наконец — …` / `И последнее — …`.
+- **Числа.** Прописью до 99: `одно`, `два`, … `двадцать`, `двадцать одно` и т. д. Существительное согласуется: `задание` / `задания` / `заданий`.
+- **Вложения.** Если в задании есть файлы: `, с вложением`, `, с двумя вложениями`, `, с тремя вложениями` … (творительный падеж: тремя, четырьмя, пятью, … двадцатью пятью).
+- **Завершение.** `Удачи с уроками!`
+- **Нет заданий.** `На завтра ничего не задали. Можно отдыхать!`
+
+Пример полного ответа:
+
+> На завтра, в среду, два задания. Первое — алгебра: параграф 12, номера 5 и 6, с двумя вложениями. Второе — литература: прочитать главу 3. Удачи с уроками!
+
+### Служебные фразы
+
+| Ситуация | Ответ |
+|----------|-------|
+| Кеш пуст / в кеше ошибка | `Секунду, заглядываю в дневник. Скажи «дальше».` |
+| Повтор запроса «дальше», кеша ещё нет | `Я умею рассказывать домашку. Скажи «что задали».` |
+| Любая незнакомая команда | `Я умею рассказывать домашку. Скажи «что задали».` |
+| Обработка заняла больше 4 секунд | `Не успела посмотреть в дневник. Скажи «что задали» ещё раз.` |
+| Необработанная ошибка в навыке | `Что-то пошло не так. Попробуй, пожалуйста, ещё раз.` |
+| Ошибка обращения к СГО | `Не получилось заглянуть в дневник. Попробуй, пожалуйста, ещё раз чуть позже.` |
+
+---
+
+## Деплой (Debian/Ubuntu-сервер)
+
+```bash
+git clone https://github.com/freeuser3/alice-homework.git ~/alice-homework
+cd ~/alice-homework
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp config.example.json config.json
+nano config.json        # ввести данные СГО и skill_id
+nohup python -m alice_skill.skill > /tmp/alice-homework.log 2>&1 &
+```
+
+Чтобы Алиса доставала вебхук из интернета, нужен доступный по HTTPS адрес. Вариант для быстрого теста — `ngrok`:
+
+```bash
+ngrok http 8000
+```
+
+Скопируйте выданный адрес вида `https://<xxxx>.ngrok.io` и вставьте в консоли **Яндекс.Диалогов** → настройки навыка → **Webhook URL**: `https://<xxxx>.ngrok.io/alice`. URL отвечающей страницы должен заканчиваться именно на `/alice`.
+
+Для стабильного продакшена на постоянном адресе используйте systemd-юнит, например:
+
+```ini
+[Unit]
+Description=Alice homework skill
+After=network.target
+
+[Service]
+User=alice
+WorkingDirectory=/home/alice/alice-homework
+ExecStart=/home/alice/alice-homework/.venv/bin/python -m alice_skill.skill
+Restart=always
+EnvironmentFile=/home/alice/alice-homework/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+и системный reverse-proxy (nginx / Caddy) с TLS перед портом `8000`.
+
+---
+
+## Тестирование
 
 ```bash
 pytest -v
 ```
+
+Полный набор (текущее состояние: **78 тестов**) покрывает:
+
+- `tests/test_config.py` — загрузка конфига, приоритет env-переменных, обязательные поля;
+- `tests/test_homework.py` — дни, сбор домашки, все правила голосового формата (15 тестов);
+- `tests/test_sgo.py` — клиент СГО на фейковом `NetSchoolAPI` (без реальной сети);
+- `tests/test_cache.py` — хранение, перезапись, устаревание;
+- `tests/test_worker.py` — фоновый цикл, одиночная загрузка, устойчивость к ошибкам, single-flight;
+- `tests/test_handlers.py` — все роутеры и логика `answer_from_cache`;
+- `tests/test_skill.py` — сборка приложения, порядок роутеров, DI, обработчики таймаута/ошибок;
+- `tests/test_encoding.py` — защита от повреждения кодировки (весь текст русского интерфейса проверяется как валидный UTF-8).
+
+Тесты никогда не ходят в реальный СГО — внешний клиент заменяется фейком.
+
+---
+
+## Структура проекта
+
+```
+alice-homework/
+├── alice_skill/
+│   ├── __init__.py
+│   ├── config.py          # загрузка конфига + env-переменные
+│   ├── homework.py        # чистая логика домашки и голосового формата
+│   ├── sgo.py             # клиент СГО, HomeworkResult
+│   ├── cache.py           # HomeworkCache в памяти
+│   ├── worker.py          # PrefetchWorker (фоновый цикл)
+│   ├── skill.py           # create_app(), точки входа, webhook
+│   └── handlers/
+│       ├── common.py      # answer_from_cache + фразы
+│       ├── start.py       # новая сессия
+│       ├── homework.py    # команды «что задали» и т. п.
+│       ├── more.py        # «дальше»
+│       └── fallback.py    # всё остальное
+├── tests/                 # 8 файлов, 78 тестов
+├── config.example.json    # шаблон настроек (безопасный, в git)
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Частые вопросы
+
+**Почему нужно говорить «дальше» после «Секунду, заглядываю…»?**  
+Первый запрос к СГО занимает время, а Алиса ждёт ответ не дольше 4,5 с. Поэтому навык отвечает сразу, а полный ответ получает уже готовым из фоновой загрузки — достаточно сказать «дальше».
+
+**Что будет, если школа на каникулах?**  
+Воркер попробует взять дневник на неделю вперёд и найдет следующий день, где есть уроки. Если заданий нет вовсе — придёт «На завтра ничего не задали. Можно отдыхать!»
+
+**Можно ли запустить без `config.json`?**  
+Да, если задать `SGO_LOGIN`, `SGO_PASSWORD`, `SGO_SCHOOL` и `SKILL_ID` через переменные окружения.
+
+**Безопасность?**  
+Пароль хранится только в `config.json` (в `.gitignore`) или в переменных окружения; в git-репозитории секретов нет.
