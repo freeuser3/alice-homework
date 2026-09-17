@@ -1,0 +1,11 @@
+{
+  "sgo": {
+    "login": "your_login",
+    "password": "your_password",
+    "school": "Your School Name"
+  },
+  "prefetch_interval": 1800,
+  "host": "127.0.0.1",
+  "port": 8000,
+  "skill_id": "YOUR_SKILL_ID"
+}

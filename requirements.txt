@@ -1,0 +1,5 @@
+aliceio==0.2.3
+aiohttp>=3.9.0
+netschoolapi-plus @ git+https://github.com/freeuser3/netschool-api-plus.git
+pytest>=8.0.0
+pytest-asyncio>=0.21.0
