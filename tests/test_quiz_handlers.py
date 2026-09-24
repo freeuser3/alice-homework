@@ -44,12 +44,6 @@ class _FakeService:
     def patterns_for(self, subject):
         return list(self.patterns)
 
-    def find_entry(self, entries, subject):
-        for e in entries:
-            if e.subject.lower() == subject.lower():
-                return e
-        return None
-
 
 def _bundle(service):
     b = MagicMock()
