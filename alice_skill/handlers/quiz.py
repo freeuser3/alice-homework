@@ -7,7 +7,6 @@ from aliceio import F, Router
 from aliceio.types import Message, Response
 
 from quiz_library.model import HomeworkEntry
-from quiz_library.parser import parse_paragraph
 
 from alice_skill.quiz_state import QuizSlot
 from alice_skill.quiz_service import QuizBundle
@@ -23,7 +22,8 @@ DIRECT_TIMEOUT = 3.5
 QUIZ_NOT_CONFIGURED_TEXT = "Викторина не настроена. Попроси взрослых включить её."
 NO_HOMEWORK_TEXT = "Сегодня по {subject} ничего не задано."
 ASK_SUBJECT_TEXT = "По какому предмету спросить?"
-NO_PARAGRAPH_TEXT = "Не нашла параграф в задании по {subject}. Скажи, например, «параграф 6»."
+NO_PARA_OR_THEME_TEXT = "Не нашла в задании по {subject} ни параграфа, ни темы."
+PLATFORM_TEXT = "По {subject} задание на онлайн-платформе {label} — его в учебнике нет."
 PREMATURE_QUIZ_TEXT = "Секунду, придумываю вопрос. Скажи «дальше»."
 PREMATURE_MORE_TEXT = "Ещё чуть-чуть, придумываю вопрос. Скажи «дальше» ещё раз."
 QUIZ_FAIL_TEXT = "Не получилось придумать вопрос. Попробуй ещё раз."
@@ -85,14 +85,17 @@ async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: Qu
     if entry is None:
         return Response(text=NO_HOMEWORK_TEXT.format(subject=subject.lower()))
 
-    patterns = service.patterns_for(subject)
-    number = parse_paragraph(entry.content, patterns) if patterns else None
-    if number is None:
-        return Response(text=NO_PARAGRAPH_TEXT.format(subject=subject.lower()))
+    res = service.resolution(entry)
+    if res.reason == "platform":
+        label = "Сириус" if "сириус" in entry.content.lower() else "платформе"
+        return Response(text=PLATFORM_TEXT.format(subject=subject.lower(), label=label))
+    if res.reason in ("empty", "none"):
+        return Response(text=NO_PARA_OR_THEME_TEXT.format(subject=subject.lower()))
+    key = res.choice
 
     # слот создаётся в create_app, один на процесс (навык однопользовательский):
     # гонки нескольких параллельных сессий намеренно не обрабатываются (спека §2)
-    if slot.question is not None and slot.subject is not None and slot.subject.lower() == subject.lower() and slot.paragraph == number:
+    if slot.question is not None and slot.subject is not None and slot.subject.lower() == subject.lower() and slot.paragraph == key:
         text = slot.question
         slot.clear()
         return Response(text=text)
@@ -102,12 +105,12 @@ async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: Qu
         and not slot.task.done()
         and slot.subject is not None
         and slot.subject.lower() == subject.lower()
-        and slot.paragraph == number
+        and slot.paragraph == key
     ):
         return Response(text=PREMATURE_QUIZ_TEXT)
 
     task = _quiz_task(service, entry, slot)
-    slot.set_pending(subject=subject, paragraph=number, task=task)
+    slot.set_pending(subject=subject, paragraph=key, task=task)
 
     done, _ = await asyncio.wait({task}, timeout=DIRECT_TIMEOUT)
     if task in done:

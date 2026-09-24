@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,7 +7,8 @@ from alice_skill.cache import HomeworkCache
 from alice_skill.handlers.quiz import (
     ASK_SUBJECT_TEXT,
     NO_HOMEWORK_TEXT,
-    NO_PARAGRAPH_TEXT,
+    NO_PARA_OR_THEME_TEXT,
+    PLATFORM_TEXT,
     PREMATURE_QUIZ_TEXT,
     QUIZ_FAIL_TEXT,
     QUIZ_NOT_CONFIGURED_TEXT,
@@ -15,6 +16,7 @@ from alice_skill.handlers.quiz import (
 )
 from alice_skill.quiz_state import QuizSlot
 from quiz_library.model import HomeworkEntry, Question
+from quiz_library.service import Resolution
 
 
 def _entry(content="параграф 6", subject="География"):
@@ -29,10 +31,10 @@ def _cache(*entries):
 
 
 class _FakeService:
-    def __init__(self, question_for=None, patterns=("параграф", "§")):
+    def __init__(self, question_for=None, resolution=None):
         self._impl = question_for or self._async_none
         self._calls = 0
-        self.patterns = patterns
+        self.res = resolution
 
     async def _async_none(self, entry):
         return None
@@ -41,8 +43,19 @@ class _FakeService:
         self._calls += 1
         return await self._impl(entry)
 
-    def patterns_for(self, subject):
-        return list(self.patterns)
+    def resolution(self, entry):
+        if self.res is not None:
+            return self.res
+        from quiz_library.parser import is_empty_homework, is_platform_homework
+        if is_platform_homework(entry.content):
+            return Resolution(key=None, reason="platform")
+        if is_empty_homework(entry.content):
+            return Resolution(key=None, reason="empty")
+        import re
+        m = re.search(r"параграф (\d+)", entry.content)
+        if m:
+            return Resolution(key=str(m.group(1)), reason="number")
+        return Resolution(key=None, reason="none")
 
 
 def _bundle(service):
@@ -113,7 +126,18 @@ async def test_no_paragraph():
     resp = await handle_quiz(
         MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
     )
-    assert "параграф" in resp.text
+    assert "ни параграфа, ни темы" in resp.text
+    assert resp.text == NO_PARA_OR_THEME_TEXT.format(subject="география")
+
+
+@pytest.mark.asyncio
+async def test_platform_homework():
+    cache = _cache(_entry(content="В прикрепленном файле выполнить", subject="География"))
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    assert resp.text == PLATFORM_TEXT.format(subject="география", label="платформе")
 
 
 @pytest.mark.asyncio
@@ -129,7 +153,7 @@ async def test_ask_subject_when_many():
 @pytest.mark.asyncio
 async def test_immediate_answer():
     async def give(entry):
-        return Question(subject="География", paragraph=6, paragraph_title="Газовая",
+        return Question(subject="География", paragraph="6", paragraph_title="Газовая",
                         pages=(22, 25), text="Какой вопрос?")
 
     cache = _cache(_entry())
@@ -149,7 +173,7 @@ async def test_slow_answer_promises_question(monkeypatch):
 
     async def slow(entry):
         await release.wait()
-        return Question(subject="География", paragraph=6, paragraph_title="Газовая",
+        return Question(subject="География", paragraph="6", paragraph_title="Газовая",
                         pages=(22, 25), text="Готовый вопрос.")
 
     cache = _cache(_entry())
@@ -173,7 +197,7 @@ async def test_repeat_trigger_does_not_spawn_second_call(monkeypatch):
 
     async def slow(entry):
         await release.wait()
-        return Question(subject="География", paragraph=6, paragraph_title="Газовая",
+        return Question(subject="География", paragraph="6", paragraph_title="Газовая",
                         pages=(22, 25), text="Готовый вопрос.")
 
     cache = _cache(_entry())
@@ -200,7 +224,7 @@ async def test_ready_question_served_from_slot(monkeypatch):
 
     async def slow(entry):
         await release.wait()
-        return Question(subject="География", paragraph=6, paragraph_title="Газовая",
+        return Question(subject="География", paragraph="6", paragraph_title="Газовая",
                         pages=(22, 25), text="Готовый вопрос.")
 
     cache = _cache(_entry())
@@ -220,14 +244,14 @@ async def test_ready_question_served_from_slot(monkeypatch):
 async def test_ready_question_not_served_for_other_paragraph():
     cache = _cache(_entry(content="параграф 7", subject="География"))
     async def give(entry):
-        return Question(subject="География", paragraph=7, paragraph_title="Другая",
+        return Question(subject="География", paragraph="7", paragraph_title="Другая",
                         pages=(1, 3), text="Вопрос про параграф 7.")
 
     b = _bundle(_FakeService(question_for=give))
     slot = QuizSlot()
     slot.subject = "География"
     slot.question = "Старый вопрос про параграф 6."
-    slot.paragraph = 6
+    slot.paragraph = "6"
     resp = await handle_quiz(
         MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=slot,
     )
