@@ -15,6 +15,7 @@
 - Формирует голосовой ответ по интонационно-естественным правилам русского языка: числительные прописью, согласование «задания/заданий», творительный падеж для вложений.
 - Фоновая предзагрузка: домашку Алиса не «дожидается» — она уже в кеше на момент запроса.
 - Обработка ошибок: при сбое СГО навык вежливо просит попробовать позже, а не падает.
+- **Голосовая викторина** (опционально): «спроси по географии» — навык берёт запись из домашки, находит параграф и задаёт один вопрос по нему через LLM. Без настройки LLM-ключа навык работает как раньше.
 
 Версия **v2** (планируется): оценки, свободный диалог с пользователем, полное состояние диалога (FSM), деплой с постоянным HTTPS.
 
@@ -38,6 +39,7 @@
         aliceio Dispatcher (response_timeout=4.0)
         │  ├─ start_router      (F.session.new)
         │  ├─ homework_router   (F.command.contains …)
+        │  ├─ quiz_router       (F.command.contains «спроси»/«проверь»)
         │  ├─ more_router       (F.command == "дальше")
         │  └─ fallback_router   (catch-all)
         │
@@ -63,6 +65,8 @@
 | `alice_skill/cache.py` | `HomeworkCache` — один `HomeworkResult` + время загрузки (`get`/`set`/`is_stale`). |
 | `alice_skill/worker.py` | `PrefetchWorker` — фоновая загрузка по расписанию, single-flight защита. |
 | `alice_skill/handlers/` | Роутеры и общий хелпер `answer_from_cache`. |
+| `alice_skill/quiz_state.py` | `QuizSlot` — отложенное состояние викторины (готовый вопрос / идущая генерация). |
+| `alice_skill/quiz_service.py` | `build_quiz`/`QuizBundle` — ленивая сборка `QuizService` из quiz-library. |
 
 ### Поток обработки запроса
 
@@ -134,6 +138,11 @@ cp config.example.json config.json
 | `prefetch_interval` | `PREFETCH_INTERVAL` | Период фоновой загрузки, секунды | `1800` (30 мин) |
 | `host` | — | Адрес привязки `aiohttp` | `127.0.0.1` |
 | `port` | — | Порт вебхука | `8000` |
+| `subjects_path` | `SUBJECTS_PATH` | Путь к `subjects.json` (предметы викторины) | `subjects.json` |
+| `llm.api_key` | `LLM_API_KEY` | Ключ DS Lab API (включает викторину) | — (выключено) |
+| `llm.base_url` | `LLM_BASE_URL` | Базовый URL API | `https://api.dslab.tech/v1` |
+| `llm.model` | `LLM_MODEL` | Модель для генерации вопроса | `gpt-4.1-nano` |
+| `llm.timeout` | `LLM_TIMEOUT` | Таймаут генерации, секунды | `20` |
 
 Пример `config.json`:
 
@@ -147,7 +156,14 @@ cp config.example.json config.json
   "prefetch_interval": 1800,
   "host": "127.0.0.1",
   "port": 8000,
-  "skill_id": "abcdef12-3456-7890-abcd-ef1234567890"
+  "skill_id": "abcdef12-3456-7890-abcd-ef1234567890",
+  "subjects_path": "subjects.json",
+  "llm": {
+    "base_url": "https://api.dslab.tech/v1",
+    "api_key": "<ключ DS Lab>",
+    "model": "gpt-4.1-nano",
+    "timeout": 20
+  }
 }
 ```
 
@@ -213,6 +229,21 @@ curl -X POST http://127.0.0.1:8000/alice \
 
 ---
 
+## Голосовая викторина (опционально)
+
+Если в конфиге заполнен `llm.api_key`, навык умеет задавать вопрос по домашнему заданию:
+
+- **«спроси по географии»** / **«проверь по географии»** — берётся запись этого предмета из кеша,
+  в тексте находится номер параграфа, и через LLM (quiz-library) генерируется **один** вопрос, который тут же озвучивается.
+- Если вопрос готовится дольше 3,5 секунд, навык отвечает «Секунду, придумываю вопрос. Скажи „дальше“»,
+  а вопрос приходит следующим «дальше».
+- Без предмета в команде и с несколькими предметами навык спрашивает «По какому предмету спросить?».
+- **Без** `llm.api_key` викторина выключена: команды про «спроси по…» отвечают «Викторина не настроена», остальные команды работают как раньше.
+
+`subjects.json` и папка `digests/` (выжимки по параграфам) создаются при подготовке предметов викторины и **не** попадают в git (см. `.gitignore`).
+
+---
+
 ## Деплой (Debian/Ubuntu-сервер)
 
 ```bash
@@ -262,7 +293,7 @@ WantedBy=multi-user.target
 pytest -v
 ```
 
-Полный набор (текущее состояние: **78 тестов**) покрывает:
+Полный набор (**117 тестов**) покрывает:
 
 - `tests/test_config.py` — загрузка конфига, приоритет env-переменных, обязательные поля;
 - `tests/test_homework.py` — дни, сбор домашки, все правила голосового формата (15 тестов);
@@ -270,6 +301,9 @@ pytest -v
 - `tests/test_cache.py` — хранение, перезапись, устаревание;
 - `tests/test_worker.py` — фоновый цикл, одиночная загрузка, устойчивость к ошибкам, single-flight;
 - `tests/test_handlers.py` — все роутеры и логика `answer_from_cache`;
+- `tests/test_quiz_state.py` — `QuizSlot` (ожидание / готовый вопрос / протухшая генерация);
+- `tests/test_quiz_service.py` — `build_quiz`/`QuizBundle` (ленивая загрузка, отсутствие `subjects.json`);
+- `tests/test_quiz_handlers.py` — команды «спроси/проверь по…»: регистр, падежи, пустой кеш, «Секунду…»;
 - `tests/test_skill.py` — сборка приложения, порядок роутеров, DI, обработчики таймаута/ошибок;
 - `tests/test_encoding.py` — защита от повреждения кодировки (весь текст русского интерфейса проверяется как валидный UTF-8).
 
@@ -289,13 +323,16 @@ alice-homework/
 │   ├── cache.py           # HomeworkCache в памяти
 │   ├── worker.py          # PrefetchWorker (фоновый цикл)
 │   ├── skill.py           # create_app(), точки входа, webhook
+│   ├── quiz_state.py      # QuizSlot (отложенный вопрос викторины)
+│   ├── quiz_service.py    # QuizBundle: ленивый QuizService (quiz-library)
 │   └── handlers/
 │       ├── common.py      # answer_from_cache + фразы
 │       ├── start.py       # новая сессия
 │       ├── homework.py    # команды «что задали» и т. п.
+│       ├── quiz.py        # «спроси/проверь по …» — викторина
 │       ├── more.py        # «дальше»
 │       └── fallback.py    # всё остальное
-├── tests/                 # 8 файлов, 78 тестов
+├── tests/                 # 11 файлов, 117 тестов
 ├── config.example.json    # шаблон настроек (безопасный, в git)
 ├── requirements.txt
 └── README.md
