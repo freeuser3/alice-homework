@@ -17,6 +17,7 @@ from aliceio.types import (
 from alice_skill.cache import HomeworkCache
 from alice_skill.config import Config, SgoConfig
 from alice_skill.handlers.common import ERROR_TEXT, TIMEOUT_TEXT
+from alice_skill.handlers.quiz import QUIZ_NOT_CONFIGURED_TEXT
 from alice_skill.sgo import HomeworkResult
 from alice_skill.skill import create_app
 from alice_skill.worker import PrefetchWorker
@@ -156,3 +157,28 @@ async def test_router_order_session_new():
     resp = await dp.feed_webhook_update(skill, update)
     assert resp is not None
     assert "три задания" in resp.response.text
+
+
+@pytest.mark.asyncio
+async def test_quiz_command_not_configured():
+    cache = HomeworkCache()
+    worker = MagicMock(spec=PrefetchWorker)
+    app, dp = _free_app(_make_config, cache=cache, worker=worker)
+    skill = Skill(skill_id="test-skill")
+    update = _make_update("спроси по географии")
+    resp = await dp.feed_webhook_update(skill, update)
+    assert resp is not None
+    assert resp.response.text == QUIZ_NOT_CONFIGURED_TEXT
+
+
+@pytest.mark.asyncio
+async def test_router_order_quiz_before_fallback_but_after_homework():
+    # «проверь по географии» не должен уходить в fallback даже без квиза
+    cache = HomeworkCache()
+    worker = MagicMock(spec=PrefetchWorker)
+    app, dp = _free_app(_make_config, cache=cache, worker=worker)
+    skill = Skill(skill_id="test-skill")
+    update = _make_update("проверь меня по географии")
+    resp = await dp.feed_webhook_update(skill, update)
+    assert resp is not None
+    assert resp.response.text == QUIZ_NOT_CONFIGURED_TEXT
