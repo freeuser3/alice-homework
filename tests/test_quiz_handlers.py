@@ -1,0 +1,181 @@
+import asyncio
+import datetime
+from unittest.mock import MagicMock
+
+import pytest
+
+from alice_skill.cache import HomeworkCache
+from alice_skill.handlers.quiz import (
+    ASK_SUBJECT_TEXT,
+    NO_HOMEWORK_TEXT,
+    NO_PARAGRAPH_TEXT,
+    PREMATURE_QUIZ_TEXT,
+    QUIZ_FAIL_TEXT,
+    QUIZ_NOT_CONFIGURED_TEXT,
+    handle_quiz,
+)
+from alice_skill.quiz_state import QuizSlot
+from quiz_library.model import HomeworkEntry, Question
+
+
+def _entry(content="параграф 6", subject="География"):
+    return HomeworkEntry(subject=subject, content=content)
+
+
+def _cache(*entries):
+    cache = HomeworkCache()
+    if entries:
+        cache.set(MagicMock(status="ok", entries=list(entries)))
+    return cache
+
+
+class _FakeService:
+    def __init__(self, question_for=None, patterns=("параграф", "§")):
+        self.question_for = question_for or self._async_none
+        self.patterns = patterns
+        self.entries = None
+
+    async def _async_none(self, entry):
+        return None
+
+    def patterns_for(self, subject):
+        return list(self.patterns)
+
+    def find_entry(self, entries, subject):
+        for e in entries:
+            if e.subject.lower() == subject.lower():
+                return e
+        return None
+
+
+def _bundle(service):
+    b = MagicMock()
+    b.service.return_value = service
+    type(b).subject_names = property(lambda self: ["География", "Биология"])
+    return b
+
+
+@pytest.mark.asyncio
+async def test_not_configured_when_quiz_missing():
+    cache = _cache(_entry())
+    slot = QuizSlot()
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=None, slot=slot,
+    )
+    assert resp.text == QUIZ_NOT_CONFIGURED_TEXT
+
+
+@pytest.mark.asyncio
+async def test_not_configured_when_subjects_missing():
+    b = MagicMock()
+    b.service.return_value = None
+    cache = _cache(_entry())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    assert resp.text == QUIZ_NOT_CONFIGURED_TEXT
+
+
+@pytest.mark.asyncio
+async def test_no_entries():
+    cache = _cache()
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    assert "ничего не задано" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_no_entry_for_subject():
+    cache = _cache(_entry(subject="Биология"))
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    # предмет найден по основе, но записи по нему нет
+    assert "ничего не задано" in resp.text.lower()
+    assert "география" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_case_insensitive_subject():
+    cache = _cache(_entry())
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по ГЕОГРАФИИ"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    # предмет найден; вопрос не задан (fake возвращает None)
+    assert resp.text == QUIZ_FAIL_TEXT
+
+
+@pytest.mark.asyncio
+async def test_no_paragraph():
+    cache = _cache(_entry(content="прочитать", subject="География"))
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    assert "параграф" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_ask_subject_when_many():
+    cache = _cache(_entry(subject="География"), _entry(subject="Биология"))
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    assert resp.text == ASK_SUBJECT_TEXT
+
+
+@pytest.mark.asyncio
+async def test_immediate_answer():
+    async def give(entry):
+        return Question(subject="География", paragraph=6, paragraph_title="Газовая",
+                        pages=(22, 25), text="Какой вопрос?")
+
+    cache = _cache(_entry())
+    b = _bundle(_FakeService(question_for=give))
+    slot = QuizSlot()
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=slot,
+    )
+    assert resp.text == "Какой вопрос?"
+    assert slot.has_pending is False
+
+
+@pytest.mark.asyncio
+async def test_slow_answer_promises_question(monkeypatch):
+    monkeypatch.setattr("alice_skill.handlers.quiz.DIRECT_TIMEOUT", 0.1)
+    release = asyncio.Event()
+
+    async def slow(entry):
+        await release.wait()
+        return Question(subject="География", paragraph=6, paragraph_title="Газовая",
+                        pages=(22, 25), text="Готовый вопрос.")
+
+    cache = _cache(_entry())
+    b = _bundle(_FakeService(question_for=slow))
+    slot = QuizSlot()
+    resp = await handle_quiz(
+        MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=slot,
+    )
+    assert resp.text == PREMATURE_QUIZ_TEXT
+    assert slot.task is not None
+    assert slot.subject == "География"
+    release.set()
+    await slot.task  # эстафетный сигнал уже отдан; дожидаемся фоновой генерации
+    assert slot.question == "Готовый вопрос."
+
+
+@pytest.mark.asyncio
+async def test_genitive_subject_matches_command(monkeypatch):
+    # «по биологии» (родительный падеж) находит предмет «Биология»
+    monkeypatch.setattr("alice_skill.handlers.quiz.DIRECT_TIMEOUT", 0.1)
+    cache = _cache(_entry(subject="География"), _entry(subject="Биология"))
+    b = _bundle(_FakeService())
+    resp = await handle_quiz(
+        MagicMock(command="спроси по биологии"), cache=cache, quiz=b, slot=QuizSlot(),
+    )
+    assert resp.text == QUIZ_FAIL_TEXT  # предмет найден, fake-вопрос не генерируется

@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+
+from aliceio import F, Router
+from aliceio.types import Message, Response
+
+from quiz_library.model import HomeworkEntry
+from quiz_library.parser import parse_paragraph
+
+from alice_skill.quiz_state import QuizSlot
+from alice_skill.quiz_service import QuizBundle
+
+logger = logging.getLogger(__name__)
+
+quiz_router = Router(name="quiz")
+
+QUIZ_FILTER = F.command.contains("спроси") | F.command.contains("проверь")
+
+DIRECT_TIMEOUT = 3.5
+
+QUIZ_NOT_CONFIGURED_TEXT = "Викторина не настроена. Попроси взрослых включить её."
+NO_HOMEWORK_TEXT = "Сегодня по {subject} ничего не задано."
+ASK_SUBJECT_TEXT = "По какому предмету спросить?"
+NO_PARAGRAPH_TEXT = "Не нашла параграф в задании по {subject}. Скажи, например, «параграф 6»."
+PREMATURE_QUIZ_TEXT = "Секунду, придумываю вопрос. Скажи «дальше»."
+PREMATURE_MORE_TEXT = "Ещё чуть-чуть, придумываю вопрос. Скажи «дальше» ещё раз."
+QUIZ_FAIL_TEXT = "Не получилось придумать вопрос. Попробуй ещё раз."
+
+
+def _quiz_task(service, entry: HomeworkEntry, slot: QuizSlot):
+    async def run() -> None:
+        try:
+            q = await service.question_for(entry)
+        except Exception:
+            logger.exception("quiz generation failed")
+            q = None
+        slot.finish(entry.subject, q.text if q else None)
+
+    return asyncio.create_task(run())
+
+
+def _resolve_subject(command: str, entries: list[HomeworkEntry], names: list[str]) -> str | None:
+    # команда «спроси по биологии» — родительный падеж: «биология» напрямую
+    # как подстрока не встретится, поэтому сравниваем и по основе без последней буквы
+    command_low = command.lower()
+    for name in names:
+        name_low = name.lower()
+        if name_low in command_low or name_low[:-1] in command_low:
+            return name
+    distinct = {e.subject for e in entries}
+    if len(distinct) == 1:
+        return distinct.pop()
+    return None
+
+
+def _entry_for(entries: list[HomeworkEntry], subject: str) -> HomeworkEntry | None:
+    for e in entries:
+        if e.subject.lower() == subject.lower():
+            return e
+    return None
+
+
+@quiz_router.message(QUIZ_FILTER)
+async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: QuizSlot | None) -> Response:
+    if quiz is None or slot is None:
+        return Response(text=QUIZ_NOT_CONFIGURED_TEXT)
+    service = quiz.service()
+    if service is None:
+        return Response(text=QUIZ_NOT_CONFIGURED_TEXT)
+
+    result = cache.get()
+    entries = list(result.entries) if result is not None else []
+
+    subject = _resolve_subject(message.command, entries, quiz.subject_names)
+    if subject is None:
+        if not entries:
+            return Response(text=NO_HOMEWORK_TEXT.format(subject="этим предметам"))
+        return Response(text=ASK_SUBJECT_TEXT)
+
+    entry = _entry_for(entries, subject)
+    if entry is None:
+        return Response(text=NO_HOMEWORK_TEXT.format(subject=subject.lower()))
+
+    patterns = service.patterns_for(subject)
+    number = parse_paragraph(entry.content, patterns) if patterns else None
+    if number is None:
+        return Response(text=NO_PARAGRAPH_TEXT.format(subject=subject.lower()))
+
+    if slot.question is not None and slot.subject is not None and slot.subject.lower() == subject.lower():
+        text = slot.question
+        slot.clear()
+        return Response(text=text)
+
+    if (
+        slot.task is not None
+        and not slot.task.done()
+        and slot.subject is not None
+        and slot.subject.lower() == subject.lower()
+        and slot.paragraph == number
+    ):
+        return Response(text=PREMATURE_QUIZ_TEXT)
+
+    task = _quiz_task(service, entry, slot)
+    slot.set_pending(subject=subject, paragraph=number, task=task)
+
+    done, _ = await asyncio.wait({task}, timeout=DIRECT_TIMEOUT)
+    if task in done:
+        if slot.question is not None:
+            text = slot.question
+            slot.clear()
+            return Response(text=text)
+        slot.clear()
+        return Response(text=QUIZ_FAIL_TEXT)
+    return Response(text=PREMATURE_QUIZ_TEXT)
