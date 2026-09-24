@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from unittest.mock import MagicMock
 
@@ -9,6 +10,7 @@ from alice_skill.handlers.fallback import handle_fallback
 from alice_skill.handlers.homework import handle_homework
 from alice_skill.handlers.more import handle_more
 from alice_skill.handlers.start import handle_start
+from alice_skill.quiz_state import QuizSlot
 from alice_skill.sgo import HomeworkResult
 from alice_skill.worker import PrefetchWorker
 
@@ -127,3 +129,42 @@ async def test_more_handler_error_result_serves_cached_error_text():
 async def test_fallback_handler():
     result = await handle_fallback(_fake_message("привет"))
     assert result.text == HINT_TEXT
+
+
+@pytest.mark.asyncio
+async def test_more_serves_quiz_question_first():
+    cache = _fake_cache(_ok_result("домашний текст"))
+    slot = QuizSlot()
+    slot.subject = "География"
+    slot.question = "Вопрос квиза."
+    result = await handle_more(_fake_message("дальше"), cache=cache, slot=slot)
+    assert result.text == "Вопрос квиза."
+    assert slot.has_pending is False
+
+
+@pytest.mark.asyncio
+async def test_more_falls_back_to_homework_without_slot():
+    cache = _fake_cache(_ok_result("домашний текст"))
+    result = await handle_more(_fake_message("дальше"), cache=cache)
+    assert result.text == "домашний текст"
+
+
+@pytest.mark.asyncio
+async def test_more_still_waiting_while_generation_running():
+    cache = _fake_cache(_ok_result("домашний текст"))
+    slot = QuizSlot()
+    slot.task = asyncio.create_task(asyncio.sleep(60))
+    result = await handle_more(_fake_message("дальше"), cache=cache, slot=slot)
+    assert "чуть-чуть" in result.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_more_fail_when_generation_finished_without_question():
+    cache = _fake_cache(_ok_result("домашний текст"))
+    slot = QuizSlot()
+    task = asyncio.create_task(asyncio.sleep(0))
+    await task
+    slot.task = task  # done(), question None
+    result = await handle_more(_fake_message("дальше"), cache=cache, slot=slot)
+    assert slot.has_pending is False
+    assert "не получилось" in result.text.lower()
