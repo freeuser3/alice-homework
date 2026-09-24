@@ -47,7 +47,9 @@ def _resolve_subject(command: str, entries: list[HomeworkEntry], names: list[str
     command_low = command.lower()
     for name in names:
         name_low = name.lower()
-        if name_low in command_low or name_low[:-1] in command_low:
+        # 1-буквенные названия не проверяем по основе: пустая подстрока "в"
+        # есть в любой команде, и предмет совпадёт ложно
+        if name_low in command_low or (len(name_low) > 1 and name_low[:-1] in command_low):
             return name
     distinct = {e.subject for e in entries}
     if len(distinct) == 1:
@@ -88,7 +90,9 @@ async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: Qu
     if number is None:
         return Response(text=NO_PARAGRAPH_TEXT.format(subject=subject.lower()))
 
-    if slot.question is not None and slot.subject is not None and slot.subject.lower() == subject.lower():
+    # слот создаётся в create_app, один на процесс (навык однопользовательский):
+    # гонки нескольких параллельных сессий намеренно не обрабатываются (спека §2)
+    if slot.question is not None and slot.subject is not None and slot.subject.lower() == subject.lower() and slot.paragraph == number:
         text = slot.question
         slot.clear()
         return Response(text=text)

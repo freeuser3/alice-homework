@@ -11,7 +11,7 @@
   "subjects_path": "subjects.json",
   "llm": {
     "base_url": "https://api.dslab.tech/v1",
-    "api_key": "ВАШ_DSLAB_КЛЮЧ",
+    "api_key": "",
     "model": "gpt-4.1-nano",
     "timeout": 20
   }

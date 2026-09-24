@@ -168,3 +168,6 @@ async def test_more_fail_when_generation_finished_without_question():
     result = await handle_more(_fake_message("дальше"), cache=cache, slot=slot)
     assert slot.has_pending is False
     assert "не получилось" in result.text.lower()
+    # повторное «дальше» после ошибки отдаёт домашку, а не ошибку
+    again = await handle_more(_fake_message("дальше"), cache=cache, slot=slot)
+    assert again.text == "домашний текст"
