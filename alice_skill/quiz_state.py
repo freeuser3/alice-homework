@@ -8,11 +8,11 @@ from dataclasses import dataclass
 @dataclass
 class QuizSlot:
     subject: str | None = None
-    paragraph: int | None = None
+    paragraph: str | None = None
     question: str | None = None
     task: asyncio.Task | None = None
 
-    def set_pending(self, subject: str, paragraph: int, task: asyncio.Task) -> None:
+    def set_pending(self, subject: str, paragraph: str | None, task: asyncio.Task) -> None:
         self.subject = subject
         self.paragraph = paragraph
         self.task = task

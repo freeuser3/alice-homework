@@ -50,3 +50,10 @@ def test_clear_resets_all():
     assert slot.question is None
     assert slot.task is None
     assert slot.has_pending is False
+
+
+def test_slot_paragraph_is_str():
+    from unittest.mock import MagicMock
+    slot = QuizSlot()
+    slot.set_pending("ОБЗР", "6.1", MagicMock())
+    assert slot.paragraph == "6.1"
