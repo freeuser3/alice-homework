@@ -6,6 +6,7 @@ import re
 from typing import Optional
 
 from netschoolapi_plus.schemas import Diary
+from quiz_library.model import HomeworkEntry
 
 HOMEWORK_TYPE = "Домашнее задание"
 EMPTY_TEXT = "На завтра ничего не задали. Можно отдыхать!"
@@ -107,6 +108,13 @@ def _clean_content(content: str) -> str:
     text = re.sub(r"<[^>]+>", " ", content)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def homework_entries(entries: list[dict]) -> list[HomeworkEntry]:
+    return [
+        HomeworkEntry(subject=e["subject"], content=_clean_content(e["content"]))
+        for e in entries
+    ]
 
 
 def _opener(target: datetime.date, today: datetime.date) -> str:

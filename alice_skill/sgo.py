@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import datetime
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from alice_skill.homework import (
     EMPTY_TEXT,
     collect_homework,
     format_for_voice,
+    homework_entries,
     next_school_day,
 )
 from netschoolapi_plus import NetSchoolAPI
+from quiz_library.model import HomeworkEntry
 
 SGO_URL = "https://sgo.e-mordovia.ru"
 ERROR_TEXT = "Не получилось заглянуть в дневник. Попробуй, пожалуйста, ещё раз чуть позже."
@@ -25,6 +27,7 @@ class HomeworkResult:
     target_date: datetime.date | None
     text: str
     error: str | None = None
+    entries: list[HomeworkEntry] = field(default_factory=list)
 
 
 async def fetch_homework(
@@ -51,7 +54,10 @@ async def fetch_homework(
             )
         text = format_for_voice(entries, day, today=today)
         status = "ok" if entries else "empty"
-        return HomeworkResult(status=status, target_date=day, text=text)
+        return HomeworkResult(
+            status=status, target_date=day, text=text,
+            entries=homework_entries(entries),
+        )
     except Exception as exc:
         logger.exception("fetch_homework failed")
         return HomeworkResult(

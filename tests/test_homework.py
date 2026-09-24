@@ -206,3 +206,17 @@ def test_format_for_voice_non_tomorrow_uses_na_weekday():
     entries = [{"subject": "Алгебра", "content": "Упр. 5", "attachments": []}]
     text = format_for_voice(entries, target, today=today)
     assert text.startswith("На среду, одно задание.")
+
+
+# --- homework_entries ---
+
+def test_homework_entries_builds_library_entries():
+    from alice_skill.homework import homework_entries
+    raw = [
+        {"subject": "География", "content": "<p>параграф 6</p>", "assignment_id": 1},
+        {"subject": "Биология", "content": "§ 3, вопросы", "assignment_id": 2},
+    ]
+    result = homework_entries(raw)
+    assert [e.subject for e in result] == ["География", "Биология"]
+    assert result[0].content == "параграф 6"
+    assert result[1].content == "§ 3, вопросы"

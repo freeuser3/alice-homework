@@ -125,3 +125,32 @@ async def test_fetch_homework_logout_called_on_error():
 
     assert result.status == "error"
     mock_ns.logout.assert_awaited_once()
+
+
+def test_fetch_homework_result_entries_exists():
+    result = HomeworkResult(status="empty", target_date=None, text="")
+    assert result.entries == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_homework_ok_fills_entries():
+    target = datetime.date(2026, 9, 21)
+    lesson = _make_lesson(
+        1, "География",
+        [_make_assignment(1, "Домашнее задание", "<p>параграф 6</p>")],
+    )
+    fake_diary = _make_diary_for(target, [lesson])
+
+    mock_ns = AsyncMock()
+    mock_ns.diary = AsyncMock(return_value=fake_diary)
+    mock_ns.attachments = AsyncMock(return_value=[])
+    mock_ns.logout = AsyncMock()
+
+    with patch("alice_skill.sgo.NetSchoolAPI", return_value=mock_ns):
+        result = await fetch_homework("u", "p", "s", now=datetime.date(2026, 9, 20))
+
+    assert result.status == "ok"
+    assert len(result.entries) == 1
+    entry = result.entries[0]
+    assert entry.subject == "География"
+    assert entry.content == "параграф 6"
