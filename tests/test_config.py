@@ -68,3 +68,67 @@ def test_load_config_defaults(tmp_path):
     assert cfg.prefetch_interval == 1800
     assert cfg.host == "127.0.0.1"
     assert cfg.port == 8000
+
+
+def test_load_config_llm_block(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "subjects_path": "configs/subjects.json",
+        "llm": {"base_url": "https://api.dslab.tech/v1", "api_key": "sk-x",
+                "model": "deepseek-v4-flash", "timeout": 30},
+    })
+    cfg = load_config(path)
+    assert cfg.subjects_path == "configs/subjects.json"
+    assert cfg.llm is not None
+    assert cfg.llm.api_key == "sk-x"
+    assert cfg.llm.model == "deepseek-v4-flash"
+    assert cfg.llm.timeout == 30
+
+
+def test_load_config_llm_defaults(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "llm": {"api_key": "sk-x"},
+    })
+    cfg = load_config(path)
+    assert cfg.llm is not None
+    assert cfg.llm.base_url == "https://api.dslab.tech/v1"
+    assert cfg.llm.model == "gpt-4.1-nano"
+    assert cfg.llm.timeout == 20.0
+
+
+def test_load_config_llm_optional(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+    })
+    cfg = load_config(path)
+    assert cfg.llm is None
+    assert cfg.subjects_path == "subjects.json"
+
+
+def test_load_config_llm_env_overrides(tmp_path, monkeypatch):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "llm": {"api_key": "sk-file"},
+    })
+    monkeypatch.setenv("LLM_API_KEY", "sk-env")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4.1-nano")
+    monkeypatch.setenv("SUBJECTS_PATH", "/tmp/subj.json")
+    cfg = load_config(path)
+    assert cfg.llm is not None
+    assert cfg.llm.api_key == "sk-env"
+    assert cfg.subjects_path == "/tmp/subj.json"
+
+
+def test_load_config_llm_disabled_when_only_base_url(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "llm": {"base_url": "https://api.dslab.tech/v1"},
+    })
+    cfg = load_config(path)
+    assert cfg.llm is None

@@ -14,12 +14,22 @@ class SgoConfig:
 
 
 @dataclass(frozen=True)
+class LlmConfig:
+    base_url: str = "https://api.dslab.tech/v1"
+    api_key: str = ""
+    model: str = "gpt-4.1-nano"
+    timeout: float = 20.0
+
+
+@dataclass(frozen=True)
 class Config:
     sgo: SgoConfig
     skill_id: str
     prefetch_interval: int = 1800
     host: str = "127.0.0.1"
     port: int = 8000
+    subjects_path: str = "subjects.json"
+    llm: LlmConfig | None = None
 
 
 def load_config(path: str | Path = "config.json") -> Config:
@@ -45,5 +55,21 @@ def load_config(path: str | Path = "config.json") -> Config:
     prefetch = int(os.environ.get("PREFETCH_INTERVAL") or raw.get("prefetch_interval", 1800))
     host = raw.get("host", "127.0.0.1")
     port = int(raw.get("port", 8000))
+    subjects_path = os.environ.get("SUBJECTS_PATH") or raw.get("subjects_path", "subjects.json")
 
-    return Config(sgo=sgo, skill_id=skill_id, prefetch_interval=prefetch, host=host, port=port)
+    llm_raw: dict = raw.get("llm", {}) or {}
+    api_key = os.environ.get("LLM_API_KEY") or llm_raw.get("api_key", "")
+    llm = None
+    if api_key:
+        llm = LlmConfig(
+            base_url=os.environ.get("LLM_BASE_URL")
+            or llm_raw.get("base_url", "https://api.dslab.tech/v1"),
+            api_key=api_key,
+            model=os.environ.get("LLM_MODEL") or llm_raw.get("model", "gpt-4.1-nano"),
+            timeout=float(os.environ.get("LLM_TIMEOUT") or llm_raw.get("timeout", 20.0)),
+        )
+
+    return Config(
+        sgo=sgo, skill_id=skill_id, prefetch_interval=prefetch,
+        host=host, port=port, subjects_path=subjects_path, llm=llm,
+    )

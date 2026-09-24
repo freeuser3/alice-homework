@@ -7,5 +7,12 @@
   "prefetch_interval": 1800,
   "host": "127.0.0.1",
   "port": 8000,
-  "skill_id": "YOUR_SKILL_ID"
+  "skill_id": "YOUR_SKILL_ID",
+  "subjects_path": "subjects.json",
+  "llm": {
+    "base_url": "https://api.dslab.tech/v1",
+    "api_key": "ВАШ_DSLAB_КЛЮЧ",
+    "model": "gpt-4.1-nano",
+    "timeout": 20
+  }
 }

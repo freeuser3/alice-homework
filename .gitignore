@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+digests/
+subjects.json
+_q.txt
