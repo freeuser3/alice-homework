@@ -18,6 +18,7 @@ class LlmConfig:
     base_url: str = "https://api.dslab.tech/v1"
     api_key: str = ""
     model: str = "gpt-4.1-nano"
+    summary_model: str = "gpt-5.4-nano"
     timeout: float = 20.0
 
 
@@ -70,6 +71,8 @@ def load_config(path: str | Path = "config.json") -> Config:
             or llm_raw.get("base_url", "https://api.dslab.tech/v1"),
             api_key=api_key,
             model=os.environ.get("LLM_MODEL") or llm_raw.get("model", "gpt-4.1-nano"),
+            summary_model=os.environ.get("LLM_SUMMARY_MODEL")
+            or llm_raw.get("summary_model", "gpt-5.4-nano"),
             timeout=float(os.environ.get("LLM_TIMEOUT") or llm_raw.get("timeout", 20.0)),
         )
 

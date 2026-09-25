@@ -59,3 +59,39 @@ async def test_close_awaits_llm_close(tmp_path):
     bundle = build_quiz(_cfg(tmp_path))
     assert bundle is not None
     await bundle.close()  # не падает; session не создавалась
+
+
+def test_build_quiz_creates_separate_summary_llm(tmp_path):
+    bundle = build_quiz(_cfg(tmp_path))
+    assert bundle is not None
+    assert bundle.summary_llm is not None
+    assert bundle.summary_llm is not bundle.llm
+    assert bundle.summary_llm.config.model == "gpt-5.4-nano"
+    assert bundle.llm.config.model == "gpt-4.1-nano"
+
+
+def test_build_quiz_no_summary_llm_when_empty_model(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg = Config(
+        sgo=cfg.sgo, skill_id=cfg.skill_id, subjects_path=cfg.subjects_path,
+        llm=LlmConfig(api_key="sk-x", summary_model=""),
+    )
+    bundle = build_quiz(cfg)
+    assert bundle is not None
+    assert bundle.summary_llm is None
+
+
+def test_summary_llm_model_from_cfg(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg = Config(
+        sgo=cfg.sgo, skill_id=cfg.skill_id, subjects_path=cfg.subjects_path,
+        llm=LlmConfig(api_key="sk-x", model="gpt-4.1-nano",
+                      summary_model="deepseek-v4-flash"),
+    )
+    bundle = build_quiz(cfg)
+    assert bundle is not None
+    assert bundle.summary_llm is not None
+    assert bundle.summary_llm.config.model == "deepseek-v4-flash"
+
+    # фоновая модель (quiz) остаётся прежней
+    assert bundle.llm.config.model == "gpt-4.1-nano"

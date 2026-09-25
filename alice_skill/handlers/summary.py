@@ -47,7 +47,7 @@ SYSTEM_PROMPT = """Ты — строгий и спокойный школьны�
 Используй только факты из данных. Не выдумывай причины, прогресс или ухудшение.
 Не повторяй одну мысль и не сравнивай с другими учениками.
 
-Егор любит шахматы, поэтому иногда используй одну короткую естественную
+Ученик любит шахматы, поэтому иногда используй одну короткую естественную
 шахматную метафору, связанную с итогом недели. Не вставляй её ради метафоры
 и не используй больше одной за отчёт. Не повторяй один образ в двух отчётах подряд.
 
@@ -151,7 +151,9 @@ async def handle_summary(
         slot.clear()
         return Response(text=text)
 
-    task = _summary_task(quiz.llm, context, slot, memory, week, facts)
+    task = _summary_task(
+        quiz.summary_llm or quiz.llm, context, slot, memory, week, facts,
+    )
     slot.set_pending(task)
 
     done, _ = await asyncio.wait({task}, timeout=DIRECT_TIMEOUT)

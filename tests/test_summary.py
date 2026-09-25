@@ -49,6 +49,14 @@ def _cache(result):
 def _bundle(llm):
     b = MagicMock()
     b.llm = llm
+    b.summary_llm = None
+    return b
+
+
+def _bundle_with_summary_llm(llm, summary_llm):
+    b = MagicMock()
+    b.llm = llm
+    b.summary_llm = summary_llm
     return b
 
 
@@ -338,3 +346,30 @@ async def test_no_digest_below_threshold(tmp_path):
     assert memory.digest == ""
     assert len(memory.weeks) == 1
     assert len(llm.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_generation_uses_summary_llm_when_present():
+    main_llm = _FakeLlm("не должен использоваться")
+    summary_llm = _FakeLlm("Итог: две четвёрки, алгебра на подъёме.")
+    resp = await handle_summary(
+        MagicMock(command="итоги за неделю"), cache=_cache(_result()),
+        worker=MagicMock(), quiz=_bundle_with_summary_llm(main_llm, summary_llm),
+        summary_slot=SummarySlot(),
+        today=TODAY,
+    )
+    assert resp.text == "Итог: две четвёрки, алгебра на подъёме."
+    assert len(summary_llm.calls) == 1
+    assert len(main_llm.calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_generation_falls_back_to_main_llm_without_summary_llm():
+    main_llm = _FakeLlm("Итог: одна пятёрка.")
+    resp = await handle_summary(
+        MagicMock(command="итоги за неделю"), cache=_cache(_result()),
+        worker=MagicMock(), quiz=_bundle(main_llm), summary_slot=SummarySlot(),
+        today=TODAY,
+    )
+    assert resp.text == "Итог: одна пятёрка."
+    assert len(main_llm.calls) == 1

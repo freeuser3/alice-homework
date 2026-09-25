@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class QuizBundle:
     cfg: Config
     llm: LLMClient
+    summary_llm: LLMClient | None = None
     _service: QuizService | None = None
     _names: list[str] = field(default_factory=list)
     _built: bool = False
@@ -43,6 +44,8 @@ class QuizBundle:
 
     async def close(self) -> None:
         await self.llm.close()
+        if self.summary_llm is not None:
+            await self.summary_llm.close()
 
 
 def build_quiz(cfg: Config) -> QuizBundle | None:
@@ -51,4 +54,9 @@ def build_quiz(cfg: Config) -> QuizBundle | None:
     llm = LLMClient(
         LLMConfig(cfg.llm.base_url, cfg.llm.api_key, cfg.llm.model, cfg.llm.timeout)
     )
-    return QuizBundle(cfg=cfg, llm=llm)
+    summary_llm = None
+    if cfg.llm.summary_model:
+        summary_llm = LLMClient(
+            LLMConfig(cfg.llm.base_url, cfg.llm.api_key, cfg.llm.summary_model, cfg.llm.timeout)
+        )
+    return QuizBundle(cfg=cfg, llm=llm, summary_llm=summary_llm)

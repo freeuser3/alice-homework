@@ -136,6 +136,40 @@ def test_load_config_llm_env_overrides(tmp_path, monkeypatch):
     assert cfg.subjects_path == "/tmp/subj.json"
 
 
+def test_load_config_llm_summary_model_default(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "llm": {"api_key": "sk-x"},
+    })
+    cfg = load_config(path)
+    assert cfg.llm is not None
+    assert cfg.llm.summary_model == "gpt-5.4-nano"
+
+
+def test_load_config_llm_summary_model_from_file(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "llm": {"api_key": "sk-x", "summary_model": "gpt-4.1-mini"},
+    })
+    cfg = load_config(path)
+    assert cfg.llm is not None
+    assert cfg.llm.summary_model == "gpt-4.1-mini"
+
+
+def test_load_config_llm_summary_model_env(tmp_path, monkeypatch):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "llm": {"api_key": "sk-x", "summary_model": "gpt-4.1-mini"},
+    })
+    monkeypatch.setenv("LLM_SUMMARY_MODEL", "gpt-5.4-nano")
+    cfg = load_config(path)
+    assert cfg.llm is not None
+    assert cfg.llm.summary_model == "gpt-5.4-nano"
+
+
 def test_load_config_llm_disabled_when_only_base_url(tmp_path):
     path = _write_config(tmp_path, {
         "sgo": {"login": "u", "password": "p", "school": "s"},
