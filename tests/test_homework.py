@@ -5,7 +5,9 @@ from alice_skill.homework import (
     EMPTY_TEXT,
     attachments_phrase,
     collect_homework,
+    collect_lessons,
     format_for_voice,
+    format_lessons_for_voice,
     next_school_day,
     number_to_words,
     number_to_words_instrumental,
@@ -109,6 +111,20 @@ def test_next_school_day_none():
     assert next_school_day(diary, sun) is None
 
 
+def test_next_school_day_skips_saturday_even_with_lessons():
+    # 2026-09-19 — суббота; в расписании есть уроки, но в субботу не учатся
+    sat = datetime.date(2026, 9, 19)
+    mon = datetime.date(2026, 9, 21)
+    diary = Diary(
+        start=sat, end=mon,
+        schedule=[
+            Day(lessons=[_make_lesson(1, "Физкультура", [])], day=sat),
+            Day(lessons=[_make_lesson(1, "А", [_make_assignment(1, "Домашнее задание", "x")])], day=mon),
+        ],
+    )
+    assert next_school_day(diary, sat) == mon
+
+
 # --- collect_homework ---
 
 def test_collect_homework_filters_non_homework():
@@ -206,6 +222,55 @@ def test_format_for_voice_non_tomorrow_uses_na_weekday():
     entries = [{"subject": "Алгебра", "content": "Упр. 5", "attachments": []}]
     text = format_for_voice(entries, target, today=today)
     assert text.startswith("На среду, одно задание.")
+
+
+# --- collect_lessons / format_lessons_for_voice ---
+
+def test_collect_lessons_orders_by_number_returns_first():
+    target = datetime.date(2026, 9, 21)
+    l0 = _make_lesson(0, "Классный час", [_make_assignment(1, "Домашнее задание", "x")])
+    l1 = _make_lesson(1, "Алгебра", [_make_assignment(2, "Домашнее задание", "y")])
+    l2 = _make_lesson(2, "Русский", [_make_assignment(3, "Домашнее задание", "z")])
+    diary = _make_diary_for(target, [l2, l0, l1])
+    lessons, first = collect_lessons(diary, target)
+    assert lessons == ["Классный час", "Алгебра", "Русский"]
+    assert first == 0
+
+
+def test_collect_lessons_empty_day():
+    diary = _make_diary_for(datetime.date(2026, 9, 21), [])
+    lessons, first = collect_lessons(diary, datetime.date(2026, 9, 21))
+    assert lessons == []
+    assert first is None
+
+
+def test_format_lessons_for_voice_zero_lesson():
+    target = datetime.date(2026, 9, 21)   # Monday
+    today = datetime.date(2026, 9, 20)    # Sunday
+    text = format_lessons_for_voice(["Классный час", "Алгебра"], 0, target, today=today)
+    assert text == "На завтра, в понедельник, уроки с нулевого: классный час, алгебра."
+
+
+def test_format_lessons_for_voice_first_lesson():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    text = format_lessons_for_voice(["Алгебра", "Русский язык"], 1, target, today=today)
+    assert text == "На завтра, в понедельник, уроки с первого: алгебра, русский язык."
+
+
+def test_format_lessons_for_voice_not_tomorrow():
+    target = datetime.date(2026, 9, 23)   # Wednesday
+    today = datetime.date(2026, 9, 21)    # Monday (3 days ahead)
+    text = format_lessons_for_voice(["Физика"], 1, target, today=today)
+    assert text == "Завтра не учебный день. На среду, уроки с первого: физика."
+
+
+def test_format_lessons_for_voice_tomorrow_no_warning():
+    target = datetime.date(2026, 9, 22)   # Tuesday
+    today = datetime.date(2026, 9, 21)    # Monday
+    text = format_lessons_for_voice(["Физика"], 1, target, today=today)
+    assert not text.startswith("Завтра не учебный день")
+    assert text.startswith("На завтра,")
 
 
 # --- homework_entries ---

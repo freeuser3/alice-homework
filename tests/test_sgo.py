@@ -154,3 +154,24 @@ async def test_fetch_homework_ok_fills_entries():
     entry = result.entries[0]
     assert entry.subject == "География"
     assert entry.content == "параграф 6"
+
+
+@pytest.mark.asyncio
+async def test_fetch_homework_fills_lessons():
+    target = datetime.date(2026, 9, 21)
+    l0 = _make_lesson(0, "Классный час", [])
+    l1 = _make_lesson(1, "География", [_make_assignment(1, "Домашнее задание", "параграф 6")])
+    fake_diary = _make_diary_for(target, [l1, l0])
+
+    mock_ns = AsyncMock()
+    mock_ns.diary = AsyncMock(return_value=fake_diary)
+    mock_ns.attachments = AsyncMock(return_value=[])
+    mock_ns.logout = AsyncMock()
+
+    with patch("alice_skill.sgo.NetSchoolAPI", return_value=mock_ns):
+        result = await fetch_homework("u", "p", "s", now=datetime.date(2026, 9, 20))
+
+    assert result.lessons == ["Классный час", "География"]
+    assert "уроки с нулевого" in result.lessons_text
+    assert "классный час" in result.lessons_text
+    assert "география" in result.lessons_text

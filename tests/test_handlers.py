@@ -10,6 +10,7 @@ from alice_skill.handlers.fallback import handle_fallback
 from alice_skill.handlers.homework import handle_homework
 from alice_skill.handlers.more import handle_more
 from alice_skill.handlers.start import handle_start
+from alice_skill.handlers.timetable import handle_timetable
 from alice_skill.quiz_state import QuizSlot
 from alice_skill.sgo import HomeworkResult
 from alice_skill.worker import PrefetchWorker
@@ -171,3 +172,33 @@ async def test_more_fail_when_generation_finished_without_question():
     # повторное «дальше» после ошибки отдаёт домашку, а не ошибку
     again = await handle_more(_fake_message("дальше"), cache=cache, slot=slot)
     assert again.text == "домашний текст"
+
+
+# --- timetable ---
+
+def _ok_timetable_result():
+    return HomeworkResult(
+        status="ok", target_date=datetime.date(2026, 9, 21),
+        text="", lessons=["Алгебра", "География"],
+        lessons_text="На завтра, в понедельник, уроки с первого: алгебра, география.",
+    )
+
+
+@pytest.mark.asyncio
+async def test_timetable_handler_ok():
+    cache = _fake_cache(_ok_timetable_result())
+    worker = _fake_worker()
+    result = await handle_timetable(
+        _fake_message("какие завтра уроки"), cache=cache, worker=worker,
+    )
+    assert "уроки с первого: алгебра, география" in result.text
+    worker.refresh_now.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_timetable_handler_premature_on_empty_cache():
+    cache = _fake_cache(None)
+    worker = _fake_worker()
+    result = await handle_timetable(_fake_message("расписание"), cache=cache, worker=worker)
+    assert result.text == PREMATURE_TEXT
+    worker.refresh_now.assert_called_once()

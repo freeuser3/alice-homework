@@ -11,9 +11,11 @@ TIMEOUT_TEXT = "Не успела посмотреть в дневник. Ска
 ERROR_TEXT = "Что-то пошло не так. Попробуй, пожалуйста, ещё раз."
 
 
-def answer_from_cache(cache: HomeworkCache, worker: PrefetchWorker) -> Response:
+def answer_from_cache(
+    cache: HomeworkCache, worker: PrefetchWorker, field: str = "text",
+) -> Response:
     result = cache.get()
     if result is not None and result.status in ("ok", "empty"):
-        return Response(text=result.text)
+        return Response(text=getattr(result, field))
     worker.refresh_now()
     return Response(text=PREMATURE_TEXT)

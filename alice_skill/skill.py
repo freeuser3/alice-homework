@@ -17,6 +17,7 @@ from alice_skill.handlers.homework import homework_router
 from alice_skill.handlers.more import more_router
 from alice_skill.handlers.quiz import quiz_router
 from alice_skill.handlers.start import start_router
+from alice_skill.handlers.timetable import timetable_router
 from alice_skill.logging_middleware import LoggingMiddleware
 from alice_skill.logging_setup import setup_logging
 from alice_skill.quiz_service import build_quiz
@@ -54,6 +55,7 @@ def create_app(config: Config) -> web.Application:
     dp.include_router(homework_router)
     dp.include_router(quiz_router)
     dp.include_router(more_router)
+    dp.include_router(timetable_router)
     dp.include_router(fallback_router)
 
     @dp.startup()

@@ -11,6 +11,7 @@ from quiz_library.model import HomeworkEntry
 HOMEWORK_TYPE = "Домашнее задание"
 EMPTY_TEXT = "На завтра ничего не задали. Можно отдыхать!"
 CLOSING = "Удачи с уроками"
+DAYOFF_WEEKDAY = 5  # суббота — день без занятий
 
 _UNITS = [
     None, "одно", "два", "три", "четыре", "пять",
@@ -125,9 +126,22 @@ def _opener(target: datetime.date, today: datetime.date) -> str:
 
 def next_school_day(diary: Diary, start: datetime.date) -> Optional[datetime.date]:
     for day in sorted(diary.schedule, key=lambda d: d.day):
-        if day.day >= start and day.lessons:
+        if (
+            day.day >= start
+            and day.lessons
+            and day.day.weekday() != DAYOFF_WEEKDAY
+        ):
             return day.day
     return None
+
+
+def collect_lessons(diary: Diary, target: datetime.date) -> tuple[list[str], Optional[int]]:
+    for day in diary.schedule:
+        if day.day == target:
+            lessons = sorted(day.lessons, key=lambda l: l.number)
+            first = lessons[0].number if lessons else None
+            return [l.subject for l in lessons], first
+    return [], None
 
 
 def collect_homework(diary: Diary, target: datetime.date) -> list[dict]:
@@ -181,3 +195,24 @@ def format_for_voice(
         parts.append(f"{prefix} {subject}: {body}.")
     parts.append(f"{CLOSING}!")
     return " ".join(parts)
+
+
+def format_lessons_for_voice(
+    lessons: list[str],
+    first: Optional[int],
+    target: datetime.date,
+    today: datetime.date | None = None,
+) -> str:
+    if not lessons:
+        return EMPTY_TEXT
+    today = today or datetime.date.today()
+    opener = _opener(target, today)
+    if target != today + datetime.timedelta(days=1):
+        opener = "Завтра не учебный день. " + opener
+    start_phrase = (
+        "с нулевого" if first == 0
+        else "с первого" if first == 1
+        else f"с {first}-го"
+    )
+    body = ", ".join(l.lower() for l in lessons)
+    return f"{opener}, уроки {start_phrase}: {body}."

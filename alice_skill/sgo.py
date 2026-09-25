@@ -8,7 +8,9 @@ from typing import Literal
 from alice_skill.homework import (
     EMPTY_TEXT,
     collect_homework,
+    collect_lessons,
     format_for_voice,
+    format_lessons_for_voice,
     homework_entries,
     next_school_day,
 )
@@ -28,6 +30,8 @@ class HomeworkResult:
     text: str
     error: str | None = None
     entries: list[HomeworkEntry] = field(default_factory=list)
+    lessons: list[str] = field(default_factory=list)
+    lessons_text: str = ""
 
 
 async def fetch_homework(
@@ -53,10 +57,13 @@ async def fetch_homework(
                 ns, entry["assignment_id"]
             )
         text = format_for_voice(entries, day, today=today)
+        lessons, first_number = collect_lessons(diary, day)
+        lessons_text = format_lessons_for_voice(lessons, first_number, day, today=today)
         status = "ok" if entries else "empty"
         return HomeworkResult(
             status=status, target_date=day, text=text,
             entries=homework_entries(entries),
+            lessons=lessons, lessons_text=lessons_text,
         )
     except Exception as exc:
         logger.exception("fetch_homework failed")
