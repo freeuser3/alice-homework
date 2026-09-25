@@ -7,8 +7,9 @@ import logging
 from aliceio import F, Router
 from aliceio.types import Message, Response
 
+from alice_skill.homework import collect_week_facts, summarize_context
+from alice_skill.memory_store import SummaryMemory
 from alice_skill.quiz_state import SummarySlot
-from alice_skill.homework import summarize_context
 
 from .common import ERROR_TEXT, PREMATURE_TEXT
 
@@ -30,15 +31,41 @@ PREMATURE_SUMMARY_TEXT = "Секунду, собираю итог недели. 
 PREMATURE_SUMMARY_MORE_TEXT = "Ещё чуть-чуть, собираю итог. Скажи «дальше» ещё раз."
 SUMMARY_FAIL_TEXT = "Не получилось собрать итог. Попробуй ещё раз."
 
-SYSTEM_PROMPT = (
-    "Ты — школьный наставник. По данным о неделе дай короткий (не больше 3-4 "
-    "предложений) доброжелательный голосовой итог: что хорошо, что подтянуть, "
-    "какие долги и что на завтра. Отвечай только сообщением, без пояснений и "
-    "эмодзи."
+CONNECTOR_TEXT = (
+    "Используй живые сравнения и метафоры из разных областей — спорт, поход, "
+    "ремонт, шахматы, готовка, музыка. Сравнение должно подходить по смыслу. "
+    "Не повторяй одно и то же сравнение в соседних итогах: разнообразие — "
+    "признак, что ты разбираешь неделю заново, а не по шаблону."
 )
 
+SYSTEM_PROMPT = (
+    "Ты — учитель Григорий Альбертович. По данным о неделе дай короткий "
+    "голосовой итог не больше 6 предложений, в строгом деловом тоне: "
+    "сначала результат (по цифрам и фактам: оценки, средний балл, что "
+    "выполнено), потом что подтянуть и какие долги, потом что на завтра. "
+    "Конкретику — обязательно: баллы, средние, названия предметов. "
+    "Одно подбадривающее предложение — только если есть что похвалить "
+    "по фактам (реальные успехи, прогресс). Если хвалить не по фактам нельзя, "
+    "пропусти подбадривание и строго укажи, что исправить. "
+    "Никаких пустых «молодец, так держать». Не выдумывай факты, "
+    "которых нет в данных; не сравнивай ученика с другими школьниками. "
+    + CONNECTOR_TEXT +
+    " Отвечай только сообщением, без пояснений, списков и эмодзи."
+)
 
-def _summary_task(llm, context: str, slot: SummarySlot) -> asyncio.Task:
+DIGEST_PROMPT = (
+    "Ты сжимаешь месяцы наблюдений школьного наставника в краткую память. "
+    "Прочитай недели ниже и сформулируй 2-3 предложения: общая динамика "
+    "ученика (что улучшилось, что ухудшилось), слабые и сильные предметы, "
+    "проблемы с долгами. Никакой похвалы и воды — только факты и цифры. "
+    "Отвечай только текстом памяти."
+)
+
+_fold_tasks: set[asyncio.Task] = set()
+
+
+def _summary_task(llm, context: str, slot: SummarySlot, memory: SummaryMemory | None,
+                  week: str, facts: dict) -> asyncio.Task:
     async def run() -> None:
         try:
             text = await llm.complete(SYSTEM_PROMPT, context)
@@ -46,12 +73,41 @@ def _summary_task(llm, context: str, slot: SummarySlot) -> asyncio.Task:
             logger.exception("summary generation failed")
             text = None
         slot.finish(text)
+        if text is not None and memory is not None:
+            memory.append(week, facts, text)
+            memory.save()
+            if memory.needs_digest():
+                _fold_task = asyncio.create_task(_fold(memory, llm))
+                _fold_tasks.add(_fold_task)
+                _fold_task.add_done_callback(_fold_tasks.discard)
 
     return asyncio.create_task(run())
 
 
+async def _fold(memory: SummaryMemory, llm) -> None:
+    """Сворачивает переполнение памяти в дайджест через LLM."""
+    try:
+        if not memory.needs_digest():
+            return
+        overflow = memory.overflow()
+        if not overflow:
+            memory.prune()
+            memory.save()
+            return
+        digest = await llm.complete(DIGEST_PROMPT, memory.render_overflow_text(overflow))
+        if digest:
+            memory.fold_into_digest(digest)
+            memory.save()
+    except Exception:
+        logger.exception("memory fold failed")
+
+
 @summary_router.message(SUMMARY_FILTER)
-async def handle_summary(message: Message, cache, worker, quiz, summary_slot, today: datetime.date | None = None) -> Response:
+async def handle_summary(
+    message: Message, cache, worker, quiz, summary_slot,
+    memory: SummaryMemory | None = None,
+    today: datetime.date | None = None,
+) -> Response:
     if quiz is None or quiz.llm is None:
         return Response(text=SUMMARY_NOT_CONFIGURED_TEXT)
 
@@ -68,6 +124,7 @@ async def handle_summary(message: Message, cache, worker, quiz, summary_slot, to
     homework = [
         (entry.subject, entry.content) for entry in result.entries
     ]
+    memory_context = memory.render_memory_block() if memory is not None else ""
     context = summarize_context(
         result.week_schedule,
         result.week_marks,
@@ -76,7 +133,10 @@ async def handle_summary(message: Message, cache, worker, quiz, summary_slot, to
         homework,
         target,
         today,
+        memory_context=memory_context,
     )
+    week = (today - datetime.timedelta(days=today.weekday())).isoformat()
+    facts = collect_week_facts(result.week_marks, result.overdue)
 
     slot = summary_slot
     if slot.has_pending and slot.task is not None and not slot.task.done():
@@ -86,7 +146,7 @@ async def handle_summary(message: Message, cache, worker, quiz, summary_slot, to
         slot.clear()
         return Response(text=text)
 
-    task = _summary_task(quiz.llm, context, slot)
+    task = _summary_task(quiz.llm, context, slot, memory, week, facts)
     slot.set_pending(task)
 
     done, _ = await asyncio.wait({task}, timeout=DIRECT_TIMEOUT)

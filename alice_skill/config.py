@@ -31,6 +31,8 @@ class Config:
     subjects_path: str = "subjects.json"
     log_path: str = "/tmp/alice-homework.log"
     llm: LlmConfig | None = None
+    memory_path: str = "memory.json"
+    memory_max_weeks: int = 8
 
 
 def load_config(path: str | Path = "config.json") -> Config:
@@ -75,4 +77,6 @@ def load_config(path: str | Path = "config.json") -> Config:
         sgo=sgo, skill_id=skill_id, prefetch_interval=prefetch,
         host=host, port=port, subjects_path=subjects_path,
         log_path=log_path, llm=llm,
+        memory_path=os.environ.get("MEMORY_PATH") or raw.get("memory_path", "memory.json"),
+        memory_max_weeks=int(os.environ.get("MEMORY_MAX_WEEKS") or raw.get("memory_max_weeks", 8)),
     )

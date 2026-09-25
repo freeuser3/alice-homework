@@ -7,6 +7,7 @@ from alice_skill.homework import (
     collect_homework,
     collect_lessons,
     collect_marks,
+    collect_week_facts,
     collect_week_marks,
     collect_week_schedule,
     format_for_voice,
@@ -524,3 +525,46 @@ def test_summarize_context_overdue_section():
     overdue = [{"content": "Параграф 3", "deadline": "2026-09-18"}]
     text = summarize_context({}, [], overdue, [], [], target, today)
     assert "Параграф 3 до 2026-09-18" in text
+
+
+# --- collect_week_facts / summarize_context with memory ---
+
+def test_collect_week_facts_averages_and_buckets():
+    marks = [
+        {"day": "2026-09-21", "subject": "Алгебра", "mark": 5, "comment": ""},
+        {"day": "2026-09-21", "subject": "Алгебра", "mark": 4, "comment": ""},
+        {"day": "2026-09-22", "subject": "Химия", "mark": 3, "comment": ""},
+        {"day": "2026-09-22", "subject": "Физика", "mark": 5, "comment": ""},
+    ]
+    overdue = [{"content": "Параграф", "deadline": "2026-09-18"}]
+    facts = collect_week_facts(marks, overdue)
+    assert facts["marks_count"] == 4
+    assert facts["avg"] == 4.2
+    assert facts["strong"] == ["Алгебра", "Физика"]
+    assert facts["weak"] == ["Химия"]
+    assert facts["overdue"] == 1
+
+
+def test_collect_week_facts_empty():
+    facts = collect_week_facts([], [])
+    assert facts["marks_count"] == 0
+    assert facts["avg"] is None
+    assert facts["strong"] == []
+    assert facts["weak"] == []
+    assert facts["overdue"] == 0
+
+
+def test_summarize_context_omits_memory_when_empty():
+    today = datetime.date(2026, 9, 21)
+    target = datetime.date(2026, 9, 22)
+    text = summarize_context({}, [], [], [], [], target, today)
+    assert "Память о прошлых неделях" not in text
+
+
+def test_summarize_context_appends_memory_context():
+    today = datetime.date(2026, 9, 21)
+    target = datetime.date(2026, 9, 22)
+    memory = "Дайджест прошлых недель: алгебра растёт"
+    text = summarize_context({}, [], [], [], [], target, today, memory_context=memory)
+    assert "Память о прошлых неделях" in text
+    assert "Дайджест прошлых недель: алгебра растёт" in text

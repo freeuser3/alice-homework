@@ -23,6 +23,7 @@ from alice_skill.handlers.summary import summary_router
 from alice_skill.handlers.timetable import timetable_router
 from alice_skill.logging_middleware import LoggingMiddleware
 from alice_skill.logging_setup import setup_logging
+from alice_skill.memory_store import SummaryMemory
 from alice_skill.quiz_service import build_quiz
 from alice_skill.quiz_state import QuizSlot, SummarySlot
 from alice_skill.sgo import fetch_homework
@@ -44,6 +45,8 @@ def create_app(config: Config) -> web.Application:
     quiz = build_quiz(config)
     slot = QuizSlot()
     summary_slot = SummarySlot()
+    memory = SummaryMemory(config.memory_path, max_weeks=config.memory_max_weeks)
+    memory.load()
 
     dp = Dispatcher(
         response_timeout=4.0,
@@ -52,6 +55,7 @@ def create_app(config: Config) -> web.Application:
         quiz=quiz,
         slot=slot,
         summary_slot=summary_slot,
+        memory=memory,
     )
     dp.update.middleware(LoggingMiddleware())
 

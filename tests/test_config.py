@@ -144,3 +144,31 @@ def test_load_config_llm_disabled_when_only_base_url(tmp_path):
     })
     cfg = load_config(path)
     assert cfg.llm is None
+
+
+def test_load_config_memory_defaults(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+    })
+    cfg = load_config(path)
+    assert cfg.memory_path == "memory.json"
+    assert cfg.memory_max_weeks == 8
+
+
+def test_load_config_memory_from_file_and_env(tmp_path, monkeypatch):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "memory_path": "var/memory.json",
+        "memory_max_weeks": 12,
+    })
+    cfg = load_config(path)
+    assert cfg.memory_path == "var/memory.json"
+    assert cfg.memory_max_weeks == 12
+
+    monkeypatch.setenv("MEMORY_PATH", "/tmp/mem.json")
+    monkeypatch.setenv("MEMORY_MAX_WEEKS", "6")
+    cfg = load_config(path)
+    assert cfg.memory_path == "/tmp/mem.json"
+    assert cfg.memory_max_weeks == 6

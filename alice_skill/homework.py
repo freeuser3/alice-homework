@@ -266,6 +266,30 @@ def collect_week_marks(diary: Diary, monday: datetime.date) -> list[dict]:
     return result
 
 
+def collect_week_facts(week_marks: list[dict], overdue: list[dict]) -> dict:
+    """Сжатые факты недели для памяти: avg, сильные/слабые предметы, число долгов."""
+    sums: dict[str, list[float]] = {}
+    for m in week_marks:
+        sums.setdefault(m["subject"], []).append(m["mark"])
+
+    avg = None
+    strong: list[str] = []
+    weak: list[str] = []
+    if sums:
+        strong = sorted(s for s, vals in sums.items() if sum(vals) / len(vals) >= 4.5)
+        weak = sorted(s for s, vals in sums.items() if sum(vals) / len(vals) < 3.5)
+        total = sum(v for vals in sums.values() for v in vals)
+        avg = round(total / len(week_marks), 1)
+
+    return {
+        "marks_count": len(week_marks),
+        "avg": avg,
+        "strong": strong,
+        "weak": weak,
+        "overdue": len(overdue),
+    }
+
+
 def summarize_context(
     week_schedule: dict[str, list[str]],
     week_marks: list[dict],
@@ -274,6 +298,7 @@ def summarize_context(
     tomorrow_homework: list[tuple[str, str]],
     target: datetime.date,
     today: datetime.date,
+    memory_context: str = "",
 ) -> str:
     """Строит текстовый контекст для LLM: расписание, оценки, долги, уроки на завтра."""
     lines: list[str] = []
@@ -335,6 +360,11 @@ def summarize_context(
     else:
         lines.append("  не задано")
     lines.append("")
+
+    if memory_context:
+        lines.append("Память о прошлых неделях:")
+        lines.append(memory_context)
+        lines.append("")
 
     return "\n".join(lines)
 
