@@ -115,7 +115,7 @@ def cmd_status() -> None:
 
 
 def cmd_selfcheck() -> None:
-    run([sys.executable, "-m", "alice_skill.self_check"], cwd=ROOT)
+    run([sys.executable, "-m", "alice_skill.self_check"])
 
 
 def cmd_start() -> None:
@@ -182,7 +182,7 @@ def pip_check() -> bool:
 
 def cmd_update() -> None:
     print("== git pull ==")
-    pull = run(["git", "pull", "--ff-only"], cwd=ROOT)
+    pull = run(["git", "pull", "--ff-only"])
     if pull.returncode != 0:
         print("git pull завершился с кодом " + str(pull.returncode) + " — прерываю")
         return
