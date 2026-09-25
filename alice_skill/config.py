@@ -29,6 +29,7 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8000
     subjects_path: str = "subjects.json"
+    log_path: str = "/tmp/alice-homework.log"
     llm: LlmConfig | None = None
 
 
@@ -56,6 +57,7 @@ def load_config(path: str | Path = "config.json") -> Config:
     host = raw.get("host", "127.0.0.1")
     port = int(raw.get("port", 8000))
     subjects_path = os.environ.get("SUBJECTS_PATH") or raw.get("subjects_path", "subjects.json")
+    log_path = os.environ.get("LOG_PATH") or raw.get("log_path", "/tmp/alice-homework.log")
 
     llm_raw: dict = raw.get("llm", {}) or {}
     api_key = os.environ.get("LLM_API_KEY") or llm_raw.get("api_key", "")
@@ -71,5 +73,6 @@ def load_config(path: str | Path = "config.json") -> Config:
 
     return Config(
         sgo=sgo, skill_id=skill_id, prefetch_interval=prefetch,
-        host=host, port=port, subjects_path=subjects_path, llm=llm,
+        host=host, port=port, subjects_path=subjects_path,
+        log_path=log_path, llm=llm,
     )

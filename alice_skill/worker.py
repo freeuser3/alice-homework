@@ -51,6 +51,10 @@ class PrefetchWorker:
         finally:
             self._running = False
         self._cache.set(result)
+        logger.info(
+            "prefetch: status=%s entries=%d error=%r",
+            result.status, len(result.entries), result.error,
+        )
 
     async def stop(self) -> None:
         if self._task is not None:

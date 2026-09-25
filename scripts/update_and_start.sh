@@ -27,7 +27,7 @@ echo "   quiz-library свежая (match.py присутствует)"
 echo "== restart =="
 bash scripts/stop_skill.sh
 
-nohup .venv/bin/python -m alice_skill.skill > /tmp/alice-homework.log 2>&1 &
+nohup .venv/bin/python -m alice_skill.skill > /dev/null 2>> /tmp/alice-homework.log &
 sleep 2
 if pgrep -f "alice_skill.skill" >/dev/null 2>&1; then
     echo "навык запущен (лог: /tmp/alice-homework.log)"

@@ -17,6 +17,8 @@ from alice_skill.handlers.homework import homework_router
 from alice_skill.handlers.more import more_router
 from alice_skill.handlers.quiz import quiz_router
 from alice_skill.handlers.start import start_router
+from alice_skill.logging_middleware import LoggingMiddleware
+from alice_skill.logging_setup import setup_logging
 from alice_skill.quiz_service import build_quiz
 from alice_skill.quiz_state import QuizSlot
 from alice_skill.sgo import fetch_homework
@@ -45,6 +47,7 @@ def create_app(config: Config) -> web.Application:
         quiz=quiz,
         slot=slot,
     )
+    dp.update.middleware(LoggingMiddleware())
 
     # Router order matters: start → homework → quiz → more → fallback
     dp.include_router(start_router)
@@ -87,6 +90,7 @@ def create_app(config: Config) -> web.Application:
 
 def main() -> None:
     config = load_config()
+    setup_logging(config.log_path)
     app = create_app(config)
     web.run_app(app, host=config.host, port=config.port)
 

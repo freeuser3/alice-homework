@@ -126,8 +126,8 @@ def cmd_start() -> None:
     logf = open(LOG_PATH, "ab")
     subprocess.Popen(
         [sys.executable, "-m", PROC_MODULE],
-        stdout=logf,
-        stderr=subprocess.STDOUT,
+        stdout=subprocess.DEVNULL,
+        stderr=logf,
         start_new_session=True,
     )
     time.sleep(2)

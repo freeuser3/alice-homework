@@ -68,6 +68,18 @@ def test_load_config_defaults(tmp_path):
     assert cfg.prefetch_interval == 1800
     assert cfg.host == "127.0.0.1"
     assert cfg.port == 8000
+    assert cfg.log_path == "/tmp/alice-homework.log"
+
+
+def test_load_config_log_path_from_config_and_env(tmp_path, monkeypatch):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "log_path": "/var/log/skill.log",
+    })
+    assert load_config(path).log_path == "/var/log/skill.log"
+    monkeypatch.setenv("LOG_PATH", "/tmp/other.log")
+    assert load_config(path).log_path == "/tmp/other.log"
 
 
 def test_load_config_llm_block(tmp_path):

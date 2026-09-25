@@ -1,4 +1,5 @@
 ﻿import asyncio
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -282,3 +283,17 @@ async def test_genitive_subject_matches_command(monkeypatch):
         MagicMock(command="спроси по биологии"), cache=cache, quiz=b, slot=QuizSlot(),
     )
     assert resp.text == QUIZ_FAIL_TEXT  # предмет найден, fake-вопрос не генерируется
+
+
+@pytest.mark.asyncio
+async def test_handle_quiz_logs_resolution(caplog):
+    cache = _cache(_entry())
+    b = _bundle(_FakeService())
+    with caplog.at_level(logging.INFO, logger="alice_skill.handlers.quiz"):
+        await handle_quiz(
+            MagicMock(command="спроси по географии"), cache=cache, quiz=b, slot=QuizSlot(),
+        )
+    assert any(
+        "subject=География" in r.message and "reason=number" in r.message
+        for r in caplog.records
+    )

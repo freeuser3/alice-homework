@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -95,4 +96,19 @@ async def test_concurrent_refresh_once_blocked():
     worker.refresh_now()
     await asyncio.sleep(0.2)
     assert call_count == 2
+    await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_prefetch_logs_status(caplog):
+    cache = HomeworkCache()
+    fetch = AsyncMock(return_value=_ok_result())
+    worker = PrefetchWorker(fetch=fetch, cache=cache, interval=86400)
+    with caplog.at_level(logging.INFO, logger="alice_skill.worker"):
+        await worker.start()
+        await asyncio.sleep(0)
+        assert any(
+            "prefetch" in r.message and "status=ok" in r.message
+            for r in caplog.records
+        )
     await worker.stop()

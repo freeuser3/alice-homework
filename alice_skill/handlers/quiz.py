@@ -47,6 +47,7 @@ def _resolve_subject(command: str, entries: list[HomeworkEntry], names: list[str
     command_low = command.lower()
     for name in names:
         name_low = name.lower()
+        name_low = name.lower()
         # 1-буквенные названия не проверяем по основе: пустая подстрока "в"
         # есть в любой команде, и предмет совпадёт ложно
         if name_low in command_low or (len(name_low) > 1 and name_low[:-1] in command_low):
@@ -86,18 +87,22 @@ async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: Qu
         return Response(text=NO_HOMEWORK_TEXT.format(subject=subject.lower()))
 
     res = service.resolution(entry)
+    key = res.choice
+    logger.info("quiz: subject=%s command=%r reason=%s key=%s",
+                subject, message.command, res.reason, key)
     if res.reason == "platform":
         label = "Сириус" if "сириус" in entry.content.lower() else "платформе"
         return Response(text=PLATFORM_TEXT.format(subject=subject.lower(), label=label))
     if res.reason in ("empty", "none"):
         return Response(text=NO_PARA_OR_THEME_TEXT.format(subject=subject.lower()))
-    key = res.choice
+    assert key is not None
 
     # слот создаётся в create_app, один на процесс (навык однопользовательский):
     # гонки нескольких параллельных сессий намеренно не обрабатываются (спека §2)
     if slot.question is not None and slot.subject is not None and slot.subject.lower() == subject.lower() and slot.paragraph == key:
         text = slot.question
         slot.clear()
+        logger.info("quiz: answer from slot subject=%s key=%s", subject, key)
         return Response(text=text)
 
     if (
@@ -107,6 +112,7 @@ async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: Qu
         and slot.subject.lower() == subject.lower()
         and slot.paragraph == key
     ):
+        logger.info("quiz: premature (pending task) subject=%s key=%s", subject, key)
         return Response(text=PREMATURE_QUIZ_TEXT)
 
     task = _quiz_task(service, entry, slot)
@@ -117,7 +123,10 @@ async def handle_quiz(message: Message, cache, quiz: QuizBundle | None, slot: Qu
         if slot.question is not None:
             text = slot.question
             slot.clear()
+            logger.info("quiz: question generated subject=%s key=%s", subject, key)
             return Response(text=text)
         slot.clear()
+        logger.info("quiz: generation failed subject=%s key=%s", subject, key)
         return Response(text=QUIZ_FAIL_TEXT)
+    logger.info("quiz: direct timeout, answer later subject=%s key=%s", subject, key)
     return Response(text=PREMATURE_QUIZ_TEXT)
