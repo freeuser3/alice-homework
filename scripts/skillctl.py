@@ -168,15 +168,39 @@ def pip_quizlib() -> int:
     return proc.returncode
 
 
+def pip_check() -> bool:
+    proc = run([sys.executable, "-m", "pip", "check"], capture_output=True, text=True)
+    if proc.returncode == 0:
+        print("   зависимости: OK")
+        return True
+    print("   КОНФЛИКТЫ ЗАВИСИМОСТЕЙ (pip check):")
+    print(proc.stdout.rstrip())
+    print(proc.stderr.rstrip())
+    return False
+
+
 def cmd_update() -> None:
     print("== git pull ==")
     pull = run(["git", "pull", "--ff-only"])
     if pull.returncode != 0:
         print("git pull завершился с кодом " + str(pull.returncode) + " — прерываю")
         return
-    print("== переустановка quiz-library ==")
+    print("== зависимости ==")
+    aiohttp_pin = run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "aiohttp>=3.9.0,<3.12"],
+        capture_output=True,
+        text=True,
+    )
+    if aiohttp_pin.returncode != 0:
+        print("pip install aiohttp завершился с ошибкой — прерываю")
+        if aiohttp_pin.stderr.strip():
+            print(aiohttp_pin.stderr.rstrip())
+        return
+    print("== переустановка quiz-library (--no-deps) ==")
     if pip_quizlib() != 0:
         print("pip install quiz-library завершился с ошибкой — прерываю")
+        return
+    if not pip_check():
         return
     probe = run(
         [sys.executable, "-c",
