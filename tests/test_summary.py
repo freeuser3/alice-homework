@@ -146,6 +146,11 @@ async def test_context_contains_schedule_and_marks():
     assert "Домашнее задание на завтра" in user
 
 
+def test_summary_prompt_asks_for_next_school_day_not_tomorrow():
+    assert "на завтра" not in SYSTEM_PROMPT
+    assert "следующий учебный день" in SYSTEM_PROMPT
+
+
 @pytest.mark.asyncio
 async def test_slow_answer_promises_more(monkeypatch):
     monkeypatch.setattr("alice_skill.handlers.summary.DIRECT_TIMEOUT", 0.1)
