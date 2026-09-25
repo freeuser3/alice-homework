@@ -175,3 +175,45 @@ async def test_fetch_homework_fills_lessons():
     assert "уроки с нулевого" in result.lessons_text
     assert "классный час" in result.lessons_text
     assert "география" in result.lessons_text
+
+
+@pytest.mark.asyncio
+async def test_fetch_homework_fills_marks():
+    monday = datetime.date(2026, 9, 21)   # оценка в текущую неделю
+    thursday = datetime.date(2026, 9, 24)  # домашнее задание в будущий день
+    mon_lesson = _make_lesson(
+        1, "Алгебра",
+        [
+            Assignment(
+                id=3, comment="", type="Ответ на уроке", content="",
+                mark=2, is_duty=False, deadline=datetime.time(23, 59),
+            ),
+        ],
+    )
+    thu_lesson = _make_lesson(
+        1, "География",
+        [_make_assignment(4, "Домашнее задание", "параграф 6")],
+    )
+    diary = Diary(
+        start=monday,
+        end=datetime.date(2026, 9, 27),
+        schedule=[
+            Day(lessons=[mon_lesson], day=monday),
+            Day(lessons=[thu_lesson], day=thursday),
+        ],
+    )
+
+    mock_ns = AsyncMock()
+    mock_ns.diary = AsyncMock(return_value=diary)
+    mock_ns.attachments = AsyncMock(return_value=[])
+    mock_ns.logout = AsyncMock()
+
+    with patch("alice_skill.sgo.NetSchoolAPI", return_value=mock_ns):
+        result = await fetch_homework(
+            "u", "p", "s",
+            now=datetime.date(2026, 9, 21),
+        )
+
+    assert result.status == "ok"
+    assert result.target_date == thursday
+    assert result.marks == {2: {"Алгебра": 1}}

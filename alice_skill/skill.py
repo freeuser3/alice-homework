@@ -13,6 +13,7 @@ from alice_skill.cache import HomeworkCache
 from alice_skill.config import Config, load_config
 from alice_skill.handlers.common import ERROR_TEXT, TIMEOUT_TEXT
 from alice_skill.handlers.fallback import fallback_router
+from alice_skill.handlers.grades import grades_router
 from alice_skill.handlers.help import help_router
 from alice_skill.handlers.homework import homework_router
 from alice_skill.handlers.more import more_router
@@ -57,6 +58,7 @@ def create_app(config: Config) -> web.Application:
     dp.include_router(quiz_router)
     dp.include_router(more_router)
     dp.include_router(timetable_router)
+    dp.include_router(grades_router)
     dp.include_router(help_router)
     dp.include_router(fallback_router)
 

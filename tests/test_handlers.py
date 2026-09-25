@@ -10,6 +10,7 @@ from alice_skill.handlers.fallback import handle_fallback
 from alice_skill.handlers.help import handle_help
 from alice_skill.handlers.homework import handle_homework
 from alice_skill.handlers.more import handle_more
+from alice_skill.handlers.grades import handle_grades
 from alice_skill.handlers.start import handle_start
 from alice_skill.handlers.timetable import handle_timetable
 from alice_skill.quiz_state import QuizSlot
@@ -211,5 +212,55 @@ async def test_timetable_handler_premature_on_empty_cache():
     cache = _fake_cache(None)
     worker = _fake_worker()
     result = await handle_timetable(_fake_message("расписание"), cache=cache, worker=worker)
+    assert result.text == PREMATURE_TEXT
+    worker.refresh_now.assert_called_once()
+
+
+# --- grades ---
+
+def _ok_grades_result():
+    return HomeworkResult(
+        status="ok", target_date=datetime.date(2026, 9, 21),
+        text="homework text",
+        marks={2: {"Алгебра": 2, "Химия": 1}, 5: {"Биология": 1}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_grades_handler_returns_formatted_marks():
+    cache = _fake_cache(_ok_grades_result())
+    worker = _fake_worker()
+    result = await handle_grades(
+        _fake_message("сколько двоек"), cache=cache, worker=worker,
+    )
+    assert result.text == "За неделю три двойки: алгебра — 2, химия."
+    worker.refresh_now.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_grades_handler_detect_mark_word():
+    cache = _fake_cache(_ok_grades_result())
+    worker = _fake_worker()
+    result = await handle_grades(
+        _fake_message("сколько пятёрок"), cache=cache, worker=worker,
+    )
+    assert result.text == "За неделю одна пятёрка: биология."
+
+
+@pytest.mark.asyncio
+async def test_grades_handler_zero_marks():
+    cache = _fake_cache(_ok_grades_result())
+    worker = _fake_worker()
+    result = await handle_grades(
+        _fake_message("сколько четвёрок"), cache=cache, worker=worker,
+    )
+    assert result.text == "Четвёрок за неделю нет."
+
+
+@pytest.mark.asyncio
+async def test_grades_handler_premature_on_empty_cache():
+    cache = _fake_cache(None)
+    worker = _fake_worker()
+    result = await handle_grades(_fake_message("двойки"), cache=cache, worker=worker)
     assert result.text == PREMATURE_TEXT
     worker.refresh_now.assert_called_once()

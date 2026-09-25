@@ -69,6 +69,28 @@ def number_to_words(n: int) -> str:
     return str(n)
 
 
+_FEMININE_UNITS = [
+    None, "одна", "две", "три", "четыре", "пять",
+    "шесть", "семь", "восемь", "девять",
+]
+
+
+def number_to_words_feminine(n: int) -> str:
+    if n == 0:
+        return "ноль"
+    if 1 <= n <= 9:
+        return _FEMININE_UNITS[n]
+    if 10 <= n <= 19:
+        return _TEENS[n - 10]
+    if 20 <= n <= 99:
+        tens, units = divmod(n, 10)
+        if units == 0:
+            return _TENS[tens]
+        unit_word = "одна" if units == 1 else _FEMININE_UNITS[units]
+        return f"{_TENS[tens]} {unit_word}"
+    return str(n)
+
+
 def number_to_words_instrumental(n: int) -> str:
     if 1 <= n <= 9:
         return _INSTRUMENTAL_UNITS[n]
@@ -173,6 +195,58 @@ def collect_homework(diary: Diary, target: datetime.date) -> list[dict]:
                         "attachments": [],
                     })
     return result
+
+
+# Формы по падежам: (ед.ч. именительный, ед.ч. род.п. для 2–4, мн.ч. род.п. для 5+, 11–19)
+_MARK_FORMS: dict[int, tuple[str, str, str]] = {
+    2: ("двойка", "двойки", "двоек"),
+    3: ("тройка", "тройки", "троек"),
+    4: ("четвёрка", "четвёрки", "четвёрок"),
+    5: ("пятёрка", "пятёрки", "пятёрок"),
+}
+
+
+def _mark_form(mark: int, n: int) -> str:
+    singular, gen_singular, gen_plural = _MARK_FORMS[mark]
+    n100 = n % 100
+    n10 = n % 10
+    if 11 <= n100 <= 19:
+        return gen_plural
+    if n10 == 1:
+        return singular
+    if 2 <= n10 <= 4:
+        return gen_singular
+    return gen_plural
+
+
+def collect_marks(diary: Diary) -> dict[int, dict[str, int]]:
+    """Собирает оценки из дневника: {балл: {предмет: количество}}."""
+    result: dict[int, dict[str, int]] = {}
+    for day in diary.schedule:
+        for lesson in day.lessons:
+            for assignment in lesson.assignments:
+                if assignment.mark and not assignment.is_duty:
+                    counts = result.setdefault(assignment.mark, {})
+                    counts[lesson.subject] = counts.get(lesson.subject, 0) + 1
+    return result
+
+
+def format_marks(mark: int, counts: dict[str, int]) -> str:
+    total = sum(counts.values())
+    if total == 0:
+        plural = _MARK_FORMS[mark][2]
+        return f"{plural[0].upper() + plural[1:]} за неделю нет."
+    parts = []
+    for subject, cnt in sorted(counts.items()):
+        if cnt == 1:
+            parts.append(subject.lower())
+        else:
+            parts.append(f"{subject.lower()} — {cnt}")
+    word = _mark_form(mark, total)
+    return (
+        f"За неделю {number_to_words_feminine(total)} {word}: "
+        f"{', '.join(parts)}."
+    )
 
 
 def format_for_voice(

@@ -6,10 +6,13 @@ from alice_skill.homework import (
     attachments_phrase,
     collect_homework,
     collect_lessons,
+    collect_marks,
     format_for_voice,
     format_lessons_for_voice,
+    format_marks,
     next_school_day,
     number_to_words,
+    number_to_words_feminine,
     number_to_words_instrumental,
     plural_count,
 )
@@ -315,3 +318,91 @@ def test_homework_entries_builds_library_entries():
     assert [e.subject for e in result] == ["География", "Биология"]
     assert result[0].content == "параграф 6"
     assert result[1].content == "§ 3, вопросы"
+
+
+# --- number_to_words_feminine ---
+
+def test_number_to_words_feminine():
+    assert number_to_words_feminine(0) == "ноль"
+    assert number_to_words_feminine(1) == "одна"
+    assert number_to_words_feminine(2) == "две"
+    assert number_to_words_feminine(5) == "пять"
+    assert number_to_words_feminine(11) == "одиннадцать"
+    assert number_to_words_feminine(21) == "двадцать одна"
+    assert number_to_words_feminine(22) == "двадцать две"
+    assert number_to_words_feminine(35) == "тридцать пять"
+
+
+# --- collect_marks / format_marks ---
+
+def _make_marked_assignment(aid: int, mark: int | None) -> Assignment:
+    return Assignment(
+        id=aid, comment="", type="Ответ на уроке", content="",
+        mark=mark, is_duty=False, deadline=datetime.time(23, 59),
+    )
+
+
+def test_collect_marks_groups_by_mark_and_subject():
+    monday = datetime.date(2026, 9, 21)  # Monday
+    day = Day(
+        lessons=[
+            _make_lesson(1, "Алгебра", [
+                _make_marked_assignment(1, 2),
+                _make_marked_assignment(2, 3),
+            ]),
+            _make_lesson(2, "Химия", [
+                _make_marked_assignment(3, 2),
+            ]),
+        ],
+        day=monday,
+    )
+    diary = Diary(start=monday, end=monday + datetime.timedelta(days=7), schedule=[day])
+    marks = collect_marks(diary)
+    assert marks == {2: {"Алгебра": 1, "Химия": 1}, 3: {"Алгебра": 1}}
+
+
+def test_collect_marks_ignores_unmarked_assignments():
+    monday = datetime.date(2026, 9, 21)
+    day = Day(
+        lessons=[
+            _make_lesson(1, "Алгебра", [
+                _make_marked_assignment(1, 2),
+                _make_marked_assignment(2, None),
+                _make_marked_assignment(3, 0),
+            ]),
+        ],
+        day=monday,
+    )
+    diary = Diary(start=monday, end=monday + datetime.timedelta(days=7), schedule=[day])
+    marks = collect_marks(diary)
+    assert marks == {2: {"Алгебра": 1}}
+
+
+def test_format_marks_zero():
+    assert format_marks(2, {}) == "Двоек за неделю нет."
+    assert format_marks(5, {}) == "Пятёрок за неделю нет."
+
+
+def test_format_marks_single_subject():
+    text = format_marks(2, {"Химия": 2})
+    assert text == "За неделю две двойки: химия — 2."
+
+
+def test_format_marks_multiple_subjects():
+    text = format_marks(3, {"Химия": 1, "Алгебра": 1})
+    assert text == "За неделю две тройки: алгебра, химия."
+
+
+def test_format_marks_counts_per_subject():
+    text = format_marks(4, {"Химия": 2, "Алгебра": 1})
+    assert text == "За неделю три четвёрки: алгебра, химия — 2."
+
+
+def test_format_marks_many_marks():
+    text = format_marks(2, {"Химия": 5})
+    assert text == "За неделю пять двоек: химия — 5."
+
+
+def test_format_marks_single_total():
+    text = format_marks(5, {"Биология": 1})
+    assert text == "За неделю одна пятёрка: биология."
