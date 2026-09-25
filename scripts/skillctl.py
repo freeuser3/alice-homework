@@ -82,6 +82,13 @@ def is_running() -> bool:
     return bool(pgrep())
 
 
+def read_tail(n: int) -> str:
+    if not LOG_PATH.exists():
+        return ""
+    lines = LOG_PATH.read_text(errors="replace").splitlines()
+    return "\n".join(lines[-n:]) if lines else ""
+
+
 def cmd_status() -> None:
     if is_running():
         print("[OK ] процесс запущен, pid: " + pgrep().replace("\n", ", "))
@@ -101,9 +108,8 @@ def cmd_status() -> None:
         print("quiz-library: свежая версия не установлена — "
               + (last[-1] if last else "?"))
     if LOG_PATH.exists():
-        lines = LOG_PATH.read_text(errors="replace").splitlines()
-        tail = " | ".join(lines[-5:]) if lines else "<пуст>"
-        print(f"лог (последние 5): {tail}")
+        tail = read_tail(5)
+        print("лог (последние 5): " + (" | ".join(tail.splitlines()) if tail else "<пуст>"))
     else:
         print(f"лог отсутствует ({LOG_PATH})")
 
@@ -128,7 +134,8 @@ def cmd_start() -> None:
     if is_running():
         print(f"запущен (pid {pgrep()}), лог: {LOG_PATH}")
     else:
-        print("НЕ ПОДНЯЛСЯ — смотрите лог")
+        print("НЕ ПОДНЯЛСЯ — последние строки лога:")
+        print(read_tail(25) or "<пуст>")
 
 
 def cmd_stop() -> None:
@@ -150,9 +157,15 @@ def cmd_restart() -> None:
 
 
 def pip_quizlib() -> int:
-    return run(
-        [sys.executable, "-m", "pip", "install", "--force-reinstall", QUIZLIB_SRC, "--quiet"]
-    ).returncode
+    proc = run(
+        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps",
+         QUIZLIB_SRC, "--quiet"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.stderr.strip():
+        print(proc.stderr.rstrip())
+    return proc.returncode
 
 
 def cmd_update() -> None:
@@ -186,8 +199,7 @@ def cmd_tail() -> None:
     if not LOG_PATH.exists():
         print(f"лог отсутствует ({LOG_PATH})")
         return
-    lines = LOG_PATH.read_text(errors="replace").splitlines()
-    print("\n".join(lines[-20:]) if lines else "<пуст>")
+    print(read_tail(20) or "<пуст>")
 
 
 MENU = [

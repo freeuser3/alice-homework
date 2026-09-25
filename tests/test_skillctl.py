@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts import skillctl
 from scripts.skillctl import build_screen, clear_screen, render_items
 
 
@@ -36,3 +37,15 @@ def test_build_screen_contains_title_footer_and_items():
     assert "q — выход" in screen
     assert "Статус" in screen
     assert "Хвост лога" in screen
+
+
+def test_read_tail_returns_last_lines(tmp_path, monkeypatch):
+    log = tmp_path / "alice-homework.log"
+    log.write_text("\n".join(f"line {i}" for i in range(30)), encoding="utf-8")
+    monkeypatch.setattr(skillctl, "LOG_PATH", log)
+    assert skillctl.read_tail(5) == "\n".join(f"line {i}" for i in range(25, 30))
+
+
+def test_read_tail_missing_file_returns_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(skillctl, "LOG_PATH", tmp_path / "nope.log")
+    assert skillctl.read_tail(5) == ""
