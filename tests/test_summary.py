@@ -149,6 +149,8 @@ async def test_context_contains_schedule_and_marks():
 def test_summary_prompt_asks_for_next_school_day_not_tomorrow():
     assert "на завтра" not in SYSTEM_PROMPT
     assert "следующий учебный день" in SYSTEM_PROMPT
+    assert "дата" not in SYSTEM_PROMPT
+    assert "28.09" not in SYSTEM_PROMPT
 
 
 @pytest.mark.asyncio
