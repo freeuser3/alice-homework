@@ -237,6 +237,12 @@ _DAY_LBL = {0: "понедельник", 1: "вторник", 2: "среду", 3
             4: "пятницу", 5: "субботу", 6: "воскресенье"}
 
 
+def _day_label(target: datetime.date, today: datetime.date) -> str:
+    if target == today + datetime.timedelta(days=1):
+        return f"завтра, {_DAY_LBL[target.weekday()]} {target.strftime('%d.%m')}"
+    return f"{_DAY_LBL[target.weekday()]} {target.strftime('%d.%m')}"
+
+
 def collect_week_schedule(diary: Diary, monday: datetime.date) -> dict[str, list[str]]:
     """Предметы по дням недели: {день.isoformat(): [предметы]}."""
     result: dict[str, list[str]] = {}
@@ -344,16 +350,14 @@ def summarize_context(
         lines.append(f"  {item['content']}{deadline}")
     lines.append("")
 
-    lines.append(f"Уроки на завтра, "
-                 f"{_DAY_LBL[target.weekday()]} {target.strftime('%d.%m')}:")
+    lines.append(f"Уроки на {_day_label(target, today)}:")
     if tomorrow_lessons:
         lines.append(f"  {', '.join(tomorrow_lessons)}")
     else:
         lines.append("  уроков нет")
     lines.append("")
 
-    lines.append(f"Домашнее задание на завтра, "
-                 f"{_DAY_LBL[target.weekday()]} {target.strftime('%d.%m')}:")
+    lines.append(f"Домашнее задание на {_day_label(target, today)}:")
     if tomorrow_homework:
         for subject, content in tomorrow_homework:
             lines.append(f"  {subject}: {content}")

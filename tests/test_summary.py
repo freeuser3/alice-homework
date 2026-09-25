@@ -136,6 +136,7 @@ async def test_context_contains_schedule_and_marks():
     await handle_summary(
         MagicMock(command="итоги за неделю"), cache=_cache(_result()),
         worker=MagicMock(), quiz=_bundle(llm), summary_slot=SummarySlot(),
+        today=TODAY,
     )
     system, user = llm.calls[0]
     assert system == SYSTEM_PROMPT

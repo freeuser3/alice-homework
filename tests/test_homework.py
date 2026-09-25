@@ -506,6 +506,24 @@ def test_summarize_context_sections():
     assert "Алгебра: Упр. 5" in text
 
 
+def test_summarize_context_says_tomorrow_only_when_target_is_tomorrow():
+    today = datetime.date(2026, 9, 21)   # Monday
+    target = datetime.date(2026, 9, 22)  # Tuesday, именно завтра
+    text = summarize_context({"2026-09-21": ["Алгебра"]}, [],
+                             [], ["Физика"], [("Алгебра", "Упр. 5")], target, today)
+    assert "Уроки на завтра, вторник 22.09:" in text
+    assert "Домашнее задание на завтра, вторник 22.09:" in text
+    # после выходных target = понедельник, «завтра» больше не используется
+    friday = datetime.date(2026, 9, 25)
+    monday = datetime.date(2026, 9, 28)
+    text = summarize_context({"2026-09-28": ["Физика"]}, [],
+                             [], ["Физика"], [("Алгебра", "Упр. 5")], monday, friday)
+    assert "Уроки на завтра" not in text
+    assert "Домашнее задание на завтра" not in text
+    assert "Уроки на понедельник 28.09:" in text
+    assert "Домашнее задание на понедельник 28.09:" in text
+
+
 def test_summarize_context_empty():
     today = datetime.date(2026, 9, 21)
     target = datetime.date(2026, 9, 22)
