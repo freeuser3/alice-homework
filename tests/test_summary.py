@@ -373,3 +373,43 @@ async def test_generation_falls_back_to_main_llm_without_summary_llm():
     )
     assert resp.text == "Итог: одна пятёрка."
     assert len(main_llm.calls) == 1
+
+
+class _FlakyLlm:
+    def __init__(self, fail_times, result):
+        self._fail_times = fail_times
+        self._result = result
+        self.calls = []
+
+    async def complete(self, system, user):
+        self.calls.append((system, user))
+        if len(self.calls) <= self._fail_times:
+            raise RuntimeError("LLMError: HTTP 502: all_providers_failed")
+        return self._result
+
+
+@pytest.mark.asyncio
+async def test_transient_502_is_retried(monkeypatch):
+    llm = _FlakyLlm(fail_times=1, result="Итог после ретрая.")
+    resp = await handle_summary(
+        MagicMock(command="итоги за неделю"), cache=_cache(_result()),
+        worker=MagicMock(), quiz=_bundle(llm), summary_slot=SummarySlot(),
+        today=TODAY,
+    )
+    assert resp.text == "Итог после ретрая."
+    assert len(llm.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_retries_exhausted_falls_back_to_main_llm(monkeypatch):
+    main_llm = _FakeLlm("Итог от основной модели.")
+    broken = _FlakyLlm(fail_times=3, result="неважно")
+    resp = await handle_summary(
+        MagicMock(command="итоги за неделю"), cache=_cache(_result()),
+        worker=MagicMock(),
+        quiz=_bundle_with_summary_llm(main_llm, broken),
+        summary_slot=SummarySlot(), today=TODAY,
+    )
+    assert resp.text == "Итог от основной модели."
+    assert len(broken.calls) == 3
+    assert len(main_llm.calls) == 1

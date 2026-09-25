@@ -62,11 +62,25 @@ async def test_close_awaits_llm_close(tmp_path):
 
 
 def test_build_quiz_creates_separate_summary_llm(tmp_path):
-    bundle = build_quiz(_cfg(tmp_path))
+    cfg = _cfg(tmp_path)
+    cfg = Config(
+        sgo=cfg.sgo, skill_id=cfg.skill_id, subjects_path=cfg.subjects_path,
+        llm=LlmConfig(api_key="sk-x", model="gpt-4.1-nano",
+                      summary_model="gpt-5.4-nano"),
+    )
+    bundle = build_quiz(cfg)
     assert bundle is not None
     assert bundle.summary_llm is not None
     assert bundle.summary_llm is not bundle.llm
     assert bundle.summary_llm.config.model == "gpt-5.4-nano"
+    assert bundle.llm.config.model == "gpt-4.1-nano"
+
+
+def test_build_quiz_default_summary_model_same_as_main(tmp_path):
+    bundle = build_quiz(_cfg(tmp_path))
+    assert bundle is not None
+    assert bundle.summary_llm is not None
+    assert bundle.summary_llm.config.model == "gpt-4.1-nano"
     assert bundle.llm.config.model == "gpt-4.1-nano"
 
 

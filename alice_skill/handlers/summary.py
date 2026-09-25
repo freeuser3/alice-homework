@@ -68,15 +68,52 @@ DIGEST_PROMPT = (
 
 _fold_tasks: set[asyncio.Task] = set()
 
+SUMMARY_RETRIES = 3
+SUMMARY_RETRY_DELAY = 0.5
+TRANSIENT_MARKERS = ("HTTP 5", "all_providers_failed",
+                     "Service temporarily unavailable")
 
-def _summary_task(llm, context: str, slot: SummarySlot, memory: SummaryMemory | None,
-                  week: str, facts: dict) -> asyncio.Task:
-    async def run() -> None:
+
+def _is_transient_error(exc: Exception) -> bool:
+    msg = str(exc)
+    return any(marker in msg for marker in TRANSIENT_MARKERS)
+
+
+async def _complete_with_retry(llm, system: str, user: str) -> str:
+    """Пытается выполнить запрос, ретрая транзиентные сбои (5xx/timeout)."""
+    last: Exception | None = None
+    for attempt in range(SUMMARY_RETRIES):
         try:
-            text = await llm.complete(SYSTEM_PROMPT, context)
-        except Exception:
-            logger.exception("summary generation failed")
-            text = None
+            return await llm.complete(system, user)
+        except Exception as exc:
+            last = exc
+            if not _is_transient_error(exc):
+                raise
+            logger.warning("summary llm transient error (attempt %d/%d): %s",
+                           attempt + 1, SUMMARY_RETRIES, exc)
+            if attempt < SUMMARY_RETRIES - 1:
+                await asyncio.sleep(SUMMARY_RETRY_DELAY)
+    assert last is not None
+    raise last
+
+
+def _summary_task(llm, fallback_llm, context: str, slot: SummarySlot,
+                  memory: SummaryMemory | None, week: str, facts: dict) -> asyncio.Task:
+    async def run() -> None:
+        text = None
+        try:
+            text = await _complete_with_retry(llm, SYSTEM_PROMPT, context)
+        except Exception as primary_exc:
+            logger.warning("summary primary model failed: %s", primary_exc)
+            if fallback_llm is not None and fallback_llm is not llm:
+                try:
+                    text = await fallback_llm.complete(SYSTEM_PROMPT, context)
+                except Exception:
+                    logger.exception("summary generation failed (fallback)")
+                    text = None
+            else:
+                logger.exception("summary generation failed", exc_info=False)
+                text = None
         slot.finish(text)
         if text is not None and memory is not None:
             memory.append(week, facts, text)
@@ -152,7 +189,7 @@ async def handle_summary(
         return Response(text=text)
 
     task = _summary_task(
-        quiz.summary_llm or quiz.llm, context, slot, memory, week, facts,
+        quiz.summary_llm or quiz.llm, quiz.llm, context, slot, memory, week, facts,
     )
     slot.set_pending(task)
 
