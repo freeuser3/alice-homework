@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 quiz_router = Router(name="quiz")
 
-QUIZ_FILTER = F.command.contains("спроси") | F.command.contains("проверь")
+QUIZ_FILTER = (
+    F.command.contains("спроси")
+    | F.command.contains("проверь")
+    | F.command.contains("вопрос")
+)
 
 DIRECT_TIMEOUT = 3.5
 
