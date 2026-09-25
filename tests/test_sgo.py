@@ -52,7 +52,7 @@ async def test_fetch_homework_ok():
     assert result.status == "ok"
     assert result.target_date == target
     assert "алгебра" in result.text
-    assert "Упр. 5" in result.text
+    assert "Упражнение 5" in result.text
     mock_ns.login.assert_awaited_once_with("u", "p", "s")
     mock_ns.logout.assert_awaited_once()
 

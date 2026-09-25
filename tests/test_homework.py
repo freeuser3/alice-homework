@@ -161,7 +161,7 @@ def test_format_for_voice_single_item():
     entries = [{"subject": "Алгебра", "content": "Упр. 5", "attachments": []}]
     text = format_for_voice(entries, target, today=today)
     assert text.startswith("На завтра, в понедельник, одно задание.")
-    assert "Только алгебра: Упр. 5." in text
+    assert "Только алгебра: Упражнение 5." in text
     assert text.endswith("Удачи с уроками!")
 
 
@@ -174,8 +174,8 @@ def test_format_for_voice_two_items():
     ]
     text = format_for_voice(entries, target, today=today)
     assert "два задания" in text
-    assert "Первое — алгебра: Упр. 5." in text
-    assert "Второе — русский язык: Упр. 10." in text
+    assert "Первое — алгебра: Упражнение 5." in text
+    assert "Второе — русский язык: Упражнение 10." in text
 
 
 def test_format_for_voice_three_items_uses_connectors():
