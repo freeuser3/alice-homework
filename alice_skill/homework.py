@@ -111,6 +111,18 @@ def _clean_content(content: str) -> str:
     return text
 
 
+_UPR_RE = re.compile(r"\b[Уу]пр\.")
+
+
+def expand_abbreviations(text: str) -> str:
+    def _expand(match: re.Match) -> str:
+        return "Упражнение" if match.group(0).startswith("У") else "упражнение"
+
+    # «упр.43» -> «упражнение 43» (без пробела перед номером)
+    text = re.sub(r"\b[Уу]пр\.(?=\d)", lambda m: _expand(m) + " ", text)
+    return _UPR_RE.sub(_expand, text)
+
+
 def homework_entries(entries: list[dict]) -> list[HomeworkEntry]:
     return [
         HomeworkEntry(subject=e["subject"], content=_clean_content(e["content"]))
@@ -179,7 +191,7 @@ def format_for_voice(
     parts: list[str] = [opener]
     for i, entry in enumerate(entries):
         subject = entry["subject"].lower()
-        body = _clean_content(entry["content"])
+        body = expand_abbreviations(_clean_content(entry["content"]))
         att_count = len(entry.get("attachments", []))
         body += attachments_phrase(att_count)
         if count == 1:

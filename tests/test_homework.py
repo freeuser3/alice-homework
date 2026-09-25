@@ -224,6 +224,36 @@ def test_format_for_voice_non_tomorrow_uses_na_weekday():
     assert text.startswith("На среду, одно задание.")
 
 
+def test_format_for_voice_expands_upr_abbreviation():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    entries = [{"subject": "Русский", "content": "упр.43", "attachments": []}]
+    text = format_for_voice(entries, target, today=today)
+    assert "упражнение 43" in text
+    assert "упр." not in text
+
+
+def test_format_for_voice_expands_upr_with_space_and_uppercase():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    entries = [
+        {"subject": "Алгебра", "content": "Упр. 5", "attachments": []},
+        {"subject": "Физика", "content": "упр. 10", "attachments": []},
+    ]
+    text = format_for_voice(entries, target, today=today)
+    assert "Упражнение 5" in text
+    assert "упражнение 10" in text
+    assert "упр." not in text
+
+
+def test_format_for_voice_keeps_other_text_unchanged():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    entries = [{"subject": "Алгебра", "content": "Сириус, урок 12, Задание 1 (а)", "attachments": []}]
+    text = format_for_voice(entries, target, today=today)
+    assert "Сириус, урок 12, Задание 1 (а)" in text
+
+
 # --- collect_lessons / format_lessons_for_voice ---
 
 def test_collect_lessons_orders_by_number_returns_first():
