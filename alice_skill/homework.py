@@ -231,6 +231,114 @@ def collect_marks(diary: Diary) -> dict[int, dict[str, int]]:
     return result
 
 
+_DAY_EMOJI = {0: "Понедельник", 1: "Вторник", 2: "Среда", 3: "Четверг",
+              4: "Пятница", 5: "Суббота", 6: "Воскресенье"}
+_DAY_LBL = {0: "понедельник", 1: "вторник", 2: "среду", 3: "четверг",
+            4: "пятницу", 5: "субботу", 6: "воскресенье"}
+
+
+def collect_week_schedule(diary: Diary, monday: datetime.date) -> dict[str, list[str]]:
+    """Предметы по дням недели: {день.isoformat(): [предметы]}."""
+    result: dict[str, list[str]] = {}
+    for day in diary.schedule:
+        if day.day < monday or day.day.weekday() >= 6:
+            continue
+        lessons = sorted(day.lessons, key=lambda l: l.number)
+        result[day.day.isoformat()] = [l.subject for l in lessons]
+    return result
+
+
+def collect_week_marks(diary: Diary, monday: datetime.date) -> list[dict]:
+    """Оценки за неделю по дням: [{day, subject, mark, comment}] (кроме дежурных)."""
+    result: list[dict] = []
+    for day in diary.schedule:
+        if day.day < monday or day.day.weekday() >= 6:
+            continue
+        for lesson in day.lessons:
+            for assignment in lesson.assignments:
+                if assignment.mark and not assignment.is_duty:
+                    result.append({
+                        "day": day.day.isoformat(),
+                        "subject": lesson.subject,
+                        "mark": assignment.mark,
+                        "comment": assignment.comment or "",
+                    })
+    return result
+
+
+def summarize_context(
+    week_schedule: dict[str, list[str]],
+    week_marks: list[dict],
+    overdue: list[dict],
+    tomorrow_lessons: list[str],
+    tomorrow_homework: list[tuple[str, str]],
+    target: datetime.date,
+    today: datetime.date,
+) -> str:
+    """Строит текстовый контекст для LLM: расписание, оценки, долги, уроки на завтра."""
+    lines: list[str] = []
+
+    monday = today - datetime.timedelta(days=today.weekday())
+    sunday = monday + datetime.timedelta(days=6)
+    lines.append(f"Неделя: {monday.isoformat()} — {sunday.isoformat()}")
+    lines.append("")
+
+    lines.append("Расписание за неделю:")
+    if not week_schedule:
+        lines.append("  уроков не было")
+    for day_iso in sorted(week_schedule):
+        d = datetime.date.fromisoformat(day_iso)
+        subjects = ", ".join(week_schedule[day_iso])
+        lines.append(f"  {_DAY_LBL[d.weekday()]} {d.strftime('%d.%m')}: {subjects}")
+    lines.append("")
+
+    lines.append("Оценки за неделю:")
+    if not week_marks:
+        lines.append("  оценок нет")
+    for m in sorted(week_marks, key=lambda x: x["day"]):
+        comment = f". Комментарий: {m['comment']}" if m.get("comment") else ""
+        lines.append(f"  {m['day']} {m['subject']}: {m['mark']}{comment}")
+    lines.append("")
+
+    lines.append("Средний балл по предметам:")
+    avgs: dict[str, list[float]] = {}
+    for m in week_marks:
+        avgs.setdefault(m["subject"], []).append(m["mark"])
+    if not avgs:
+        lines.append("  нет данных")
+    for subject in sorted(avgs):
+        vals = avgs[subject]
+        lines.append(f"  {subject}: {sum(vals) / len(vals):.1f} ({len(vals)} оценок)")
+    lines.append("")
+
+    lines.append("Просроченные задания:")
+    if not overdue:
+        lines.append("  нет")
+    for item in overdue:
+        deadline = f" до {item['deadline']}" if item.get("deadline") else ""
+        lines.append(f"  {item['content']}{deadline}")
+    lines.append("")
+
+    lines.append(f"Уроки на завтра, "
+                 f"{_DAY_LBL[target.weekday()]} {target.strftime('%d.%m')}:")
+    if tomorrow_lessons:
+        lines.append(f"  {', '.join(tomorrow_lessons)}")
+    else:
+        lines.append("  уроков нет")
+    lines.append("")
+
+    lines.append(f"Домашнее задание на завтра, "
+                 f"{_DAY_LBL[target.weekday()]} {target.strftime('%d.%m')}:")
+    if tomorrow_homework:
+        for subject, content in tomorrow_homework:
+            lines.append(f"  {subject}: {content}")
+    else:
+        lines.append("  не задано")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 def format_marks(mark: int, counts: dict[str, int]) -> str:
     total = sum(counts.values())
     if total == 0:

@@ -19,11 +19,12 @@ from alice_skill.handlers.homework import homework_router
 from alice_skill.handlers.more import more_router
 from alice_skill.handlers.quiz import quiz_router
 from alice_skill.handlers.start import start_router
+from alice_skill.handlers.summary import summary_router
 from alice_skill.handlers.timetable import timetable_router
 from alice_skill.logging_middleware import LoggingMiddleware
 from alice_skill.logging_setup import setup_logging
 from alice_skill.quiz_service import build_quiz
-from alice_skill.quiz_state import QuizSlot
+from alice_skill.quiz_state import QuizSlot, SummarySlot
 from alice_skill.sgo import fetch_homework
 from alice_skill.worker import PrefetchWorker
 
@@ -42,6 +43,7 @@ def create_app(config: Config) -> web.Application:
 
     quiz = build_quiz(config)
     slot = QuizSlot()
+    summary_slot = SummarySlot()
 
     dp = Dispatcher(
         response_timeout=4.0,
@@ -49,16 +51,18 @@ def create_app(config: Config) -> web.Application:
         worker=worker,
         quiz=quiz,
         slot=slot,
+        summary_slot=summary_slot,
     )
     dp.update.middleware(LoggingMiddleware())
 
-    # Router order matters: start → homework → quiz → more → fallback
+    # Router order matters: start → homework → quiz → more → summary → ...
     dp.include_router(start_router)
     dp.include_router(homework_router)
     dp.include_router(quiz_router)
     dp.include_router(more_router)
     dp.include_router(timetable_router)
     dp.include_router(grades_router)
+    dp.include_router(summary_router)
     dp.include_router(help_router)
     dp.include_router(fallback_router)
 

@@ -7,6 +7,8 @@ from alice_skill.homework import (
     collect_homework,
     collect_lessons,
     collect_marks,
+    collect_week_marks,
+    collect_week_schedule,
     format_for_voice,
     format_lessons_for_voice,
     format_marks,
@@ -15,6 +17,7 @@ from alice_skill.homework import (
     number_to_words_feminine,
     number_to_words_instrumental,
     plural_count,
+    summarize_context,
 )
 from netschoolapi_plus.schemas import Assignment, Day, Diary, Lesson
 
@@ -406,3 +409,118 @@ def test_format_marks_many_marks():
 def test_format_marks_single_total():
     text = format_marks(5, {"Биология": 1})
     assert text == "За неделю одна пятёрка: биология."
+
+
+# --- collect_week_schedule / collect_week_marks / summarize_context ---
+
+def _marked(mark: int, comment: str = "") -> Assignment:
+    return Assignment(
+        id=mark, comment=comment, type="Ответ на уроке", content="",
+        mark=mark, is_duty=False, deadline=datetime.date(2026, 9, 21),
+    )
+
+
+def _week_diary() -> Diary:
+    monday = datetime.date(2026, 9, 21)  # Monday of week
+    tuesday = datetime.date(2026, 9, 22)  # Tuesday
+    sunday = datetime.date(2026, 9, 27)   # Sunday (should be ignored)
+    days = [
+        Day(lessons=[
+            _make_lesson(1, "Алгебра", [_marked(5, "Отлично")]),
+            _make_lesson(2, "Химия", [_marked(4)]),
+        ], day=monday),
+        Day(lessons=[
+            _make_lesson(1, "Физика", [_marked(3), _marked(4)]),
+        ], day=tuesday),
+        Day(lessons=[_make_lesson(1, "Физкультура", [_marked(2)])], day=sunday),
+    ]
+    return Diary(start=monday, end=tuesday, schedule=days)
+
+
+def test_collect_week_schedule_groups_by_day():
+    monday = datetime.date(2026, 9, 21)
+    result = collect_week_schedule(_week_diary(), monday)
+    assert result["2026-09-21"] == ["Алгебра", "Химия"]
+    assert result["2026-09-22"] == ["Физика"]
+    assert "2026-09-27" not in result
+
+
+def test_collect_week_schedule_ignores_days_before_monday():
+    monday = datetime.date(2026, 9, 21)
+    prev_sunday = datetime.date(2026, 9, 20)
+    diary = Diary(
+        start=prev_sunday, end=prev_sunday + datetime.timedelta(days=7),
+        schedule=[Day(lessons=[_make_lesson(1, "Старая", [])], day=prev_sunday)],
+    )
+    assert collect_week_schedule(diary, monday) == {}
+
+
+def test_collect_week_marks_with_comments():
+    monday = datetime.date(2026, 9, 21)
+    marks = collect_week_marks(_week_diary(), monday)
+    assert marks == [
+        {"day": "2026-09-21", "subject": "Алгебра", "mark": 5, "comment": "Отлично"},
+        {"day": "2026-09-21", "subject": "Химия", "mark": 4, "comment": ""},
+        {"day": "2026-09-22", "subject": "Физика", "mark": 3, "comment": ""},
+        {"day": "2026-09-22", "subject": "Физика", "mark": 4, "comment": ""},
+    ]
+
+
+def test_collect_week_marks_ignores_unmarked_and_duty():
+    monday = datetime.date(2026, 9, 21)
+    duty = Assignment(
+        id=99, comment="", type="Ответ на уроке", content="",
+        mark=5, is_duty=True, deadline=datetime.date(2026, 9, 21),
+    )
+    none_mark = Assignment(
+        id=100, comment="", type="Ответ на уроке", content="",
+        mark=None, is_duty=False, deadline=datetime.date(2026, 9, 21),
+    )
+    day = Day(lessons=[_make_lesson(1, "Алгебра", [duty, none_mark])], day=monday)
+    diary = Diary(start=monday, end=monday + datetime.timedelta(days=7), schedule=[day])
+    assert collect_week_marks(diary, monday) == []
+
+
+def test_summarize_context_sections():
+    today = datetime.date(2026, 9, 21)   # Monday
+    target = datetime.date(2026, 9, 22)  # Tuesday (tomorrow)
+    schedule = {"2026-09-21": ["Алгебра", "Химия"]}
+    marks = [{"day": "2026-09-21", "subject": "Алгебра", "mark": 5, "comment": "Отлично"},
+             {"day": "2026-09-21", "subject": "Химия", "mark": 4, "comment": ""},
+             {"day": "2026-09-21", "subject": "Химия", "mark": 4, "comment": ""}]
+    text = summarize_context(schedule, marks, [], ["Физика"], [("Алгебра", "Упр. 5")], target, today)
+    assert "Неделя: 2026-09-21 — 2026-09-27" in text
+    assert "Расписание за неделю:" in text
+    assert "понедельник 21.09: Алгебра, Химия" in text
+    assert "Оценки за неделю:" in text
+    assert "2026-09-21 Алгебра: 5. Комментарий: Отлично" in text
+    assert "2026-09-21 Химия: 4" in text
+    assert "Средний балл по предметам:" in text
+    assert "Алгебра: 5.0 (1 оценок)" in text
+    assert "Химия: 4.0 (2 оценок)" in text
+    assert "Просроченные задания:" in text
+    assert "Уроки на завтра" in text
+    assert "Физика" in text
+    assert "Домашнее задание на завтра" in text
+    assert "Алгебра: Упр. 5" in text
+
+
+def test_summarize_context_empty():
+    today = datetime.date(2026, 9, 21)
+    target = datetime.date(2026, 9, 22)
+    text = summarize_context({}, [], [], ["Физика"], [], target, today)
+    assert "уроков не было" in text
+    assert "оценок нет" in text
+    assert "нет данных" in text
+    assert "Уроки на завтра" in text
+    assert "Физика" in text
+    assert "Домашнее задание на завтра" in text
+    assert "не задано" in text
+
+
+def test_summarize_context_overdue_section():
+    today = datetime.date(2026, 9, 21)
+    target = datetime.date(2026, 9, 22)
+    overdue = [{"content": "Параграф 3", "deadline": "2026-09-18"}]
+    text = summarize_context({}, [], overdue, [], [], target, today)
+    assert "Параграф 3 до 2026-09-18" in text

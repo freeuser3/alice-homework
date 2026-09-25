@@ -206,6 +206,7 @@ async def test_fetch_homework_fills_marks():
     mock_ns = AsyncMock()
     mock_ns.diary = AsyncMock(return_value=diary)
     mock_ns.attachments = AsyncMock(return_value=[])
+    mock_ns.overdue = AsyncMock(return_value=[])
     mock_ns.logout = AsyncMock()
 
     with patch("alice_skill.sgo.NetSchoolAPI", return_value=mock_ns):
@@ -217,3 +218,55 @@ async def test_fetch_homework_fills_marks():
     assert result.status == "ok"
     assert result.target_date == thursday
     assert result.marks == {2: {"Алгебра": 1}}
+    assert result.week_schedule == {
+        "2026-09-21": ["Алгебра"],
+        "2026-09-24": ["География"],
+    }
+    assert result.week_marks == [
+        {"day": "2026-09-21", "subject": "Алгебра", "mark": 2, "comment": ""},
+    ]
+    assert result.overdue == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_homework_fills_overdue():
+    target = datetime.date(2026, 9, 21)
+    lesson = _make_lesson(1, "Алгебра", [_make_assignment(1, "Домашнее задание", "Упр. 5")])
+    fake_diary = _make_diary_for(target, [lesson])
+
+    overdue_assign = Assignment(
+        id=7, comment="", type="Домашнее задание", content="Параграф 3",
+        mark=None, is_duty=False, deadline=datetime.date(2026, 9, 18),
+    )
+
+    mock_ns = AsyncMock()
+    mock_ns.diary = AsyncMock(return_value=fake_diary)
+    mock_ns.attachments = AsyncMock(return_value=[])
+    mock_ns.overdue = AsyncMock(return_value=[overdue_assign])
+    mock_ns.logout = AsyncMock()
+
+    with patch("alice_skill.sgo.NetSchoolAPI", return_value=mock_ns):
+        result = await fetch_homework("u", "p", "s", now=datetime.date(2026, 9, 20))
+
+    assert result.status == "ok"
+    assert result.overdue == [{"content": "Параграф 3", "deadline": "2026-09-18"}]
+    mock_ns.overdue.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_fetch_homework_overdue_errors_do_not_break_result():
+    target = datetime.date(2026, 9, 21)
+    lesson = _make_lesson(1, "Алгебра", [_make_assignment(1, "Домашнее задание", "Упр. 5")])
+    fake_diary = _make_diary_for(target, [lesson])
+
+    mock_ns = AsyncMock()
+    mock_ns.diary = AsyncMock(return_value=fake_diary)
+    mock_ns.attachments = AsyncMock(return_value=[])
+    mock_ns.overdue = AsyncMock(side_effect=RuntimeError("no overdue endpoint"))
+    mock_ns.logout = AsyncMock()
+
+    with patch("alice_skill.sgo.NetSchoolAPI", return_value=mock_ns):
+        result = await fetch_homework("u", "p", "s", now=datetime.date(2026, 9, 20))
+
+    assert result.status == "ok"
+    assert result.overdue == []

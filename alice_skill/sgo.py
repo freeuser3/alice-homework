@@ -10,6 +10,8 @@ from alice_skill.homework import (
     collect_homework,
     collect_lessons,
     collect_marks,
+    collect_week_marks,
+    collect_week_schedule,
     format_for_voice,
     format_lessons_for_voice,
     homework_entries,
@@ -34,6 +36,9 @@ class HomeworkResult:
     lessons: list[str] = field(default_factory=list)
     lessons_text: str = ""
     marks: dict[int, dict[str, int]] = field(default_factory=dict)
+    week_schedule: dict[str, list[str]] = field(default_factory=dict)
+    week_marks: list[dict] = field(default_factory=list)
+    overdue: list[dict] = field(default_factory=list)
 
 
 async def fetch_homework(
@@ -53,9 +58,13 @@ async def fetch_homework(
         diary = await ns.diary(start=start, end=target + datetime.timedelta(days=7))
         day = next_school_day(diary, target)
         marks = collect_marks(diary)
+        week_schedule = collect_week_schedule(diary, start)
+        week_marks = collect_week_marks(diary, start)
+        overdue = await _collect_overdue(ns, start, end=diary.end)
         if day is None:
             return HomeworkResult(
                 status="empty", target_date=None, text=EMPTY_TEXT, marks=marks,
+                week_schedule=week_schedule, week_marks=week_marks, overdue=overdue,
             )
         entries = collect_homework(diary, day)
         for entry in entries:
@@ -71,6 +80,7 @@ async def fetch_homework(
             entries=homework_entries(entries),
             lessons=lessons, lessons_text=lessons_text,
             marks=marks,
+            week_schedule=week_schedule, week_marks=week_marks, overdue=overdue,
         )
     except Exception as exc:
         logger.exception("fetch_homework failed")
@@ -90,3 +100,21 @@ async def _assignment_attachment_names(ns: NetSchoolAPI, assignment_id: int) -> 
     except Exception:
         return []
     return [a.name for a in attachments]
+
+
+async def _collect_overdue(ns: NetSchoolAPI, start: datetime.date, end: datetime.date) -> list[dict]:
+    try:
+        assignments = await ns.overdue(start=start, end=end)
+    except Exception:
+        logger.exception("fetch overdue failed")
+        return []
+    result: list[dict] = []
+    for assignment in assignments:
+        content = (assignment.content or "").strip()
+        if not content:
+            continue
+        result.append({
+            "content": content,
+            "deadline": assignment.deadline.isoformat() if assignment.deadline else "",
+        })
+    return result

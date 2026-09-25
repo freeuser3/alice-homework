@@ -32,3 +32,27 @@ class QuizSlot:
     @property
     def has_pending(self) -> bool:
         return self.task is not None or self.question is not None
+
+
+@dataclass
+class SummarySlot:
+    """Отложенный текст итога недели: слот «подумать-и-ответь-по-дальше»."""
+
+    text: str | None = None
+    task: asyncio.Task | None = None
+
+    def set_pending(self, task: asyncio.Task) -> None:
+        self.task = task
+        self.text = None
+
+    def finish(self, text: str | None) -> None:
+        if self.task is not None and self.task is asyncio.current_task():
+            self.text = text
+
+    def clear(self) -> None:
+        self.text = None
+        self.task = None
+
+    @property
+    def has_pending(self) -> bool:
+        return self.task is not None or self.text is not None
