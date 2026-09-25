@@ -7,6 +7,7 @@ import pytest
 from alice_skill.cache import HomeworkCache
 from alice_skill.handlers.common import HINT_TEXT, PREMATURE_TEXT
 from alice_skill.handlers.fallback import handle_fallback
+from alice_skill.handlers.help import handle_help
 from alice_skill.handlers.homework import handle_homework
 from alice_skill.handlers.more import handle_more
 from alice_skill.handlers.start import handle_start
@@ -130,6 +131,15 @@ async def test_more_handler_error_result_serves_cached_error_text():
 async def test_fallback_handler():
     result = await handle_fallback(_fake_message("привет"))
     assert result.text == HINT_TEXT
+
+
+@pytest.mark.asyncio
+async def test_help_handler_lists_capabilities():
+    result = await handle_help(_fake_message("что ты умеешь"))
+    assert result.text != HINT_TEXT
+    assert "что задали" in result.text
+    assert "уроки" in result.text
+    assert "викторина" in result.text
 
 
 @pytest.mark.asyncio
