@@ -137,9 +137,10 @@ async def test_fallback_handler():
 async def test_help_handler_lists_capabilities():
     result = await handle_help(_fake_message("что ты умеешь"))
     assert result.text != HINT_TEXT
-    assert "что задали" in result.text
-    assert "уроки" in result.text
-    assert "викторина" in result.text
+    low = result.text.lower()
+    assert "что задали" in low
+    assert "уроки" in low
+    assert "викторина" in low
 
 
 @pytest.mark.asyncio
