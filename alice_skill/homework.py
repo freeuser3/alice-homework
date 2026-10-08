@@ -134,15 +134,22 @@ def _clean_content(content: str) -> str:
 
 
 _UPR_RE = re.compile(r"\b[Уу]пр\.")
+_PAR_RE = re.compile(r"\b[Пп]ар\.")
 
 
 def expand_abbreviations(text: str) -> str:
     def _expand(match: re.Match) -> str:
         return "Упражнение" if match.group(0).startswith("У") else "упражнение"
 
+    def _expand_par(match: re.Match) -> str:
+        return "Параграф" if match.group(0).startswith("П") else "параграф"
+
     # «упр.43» -> «упражнение 43» (без пробела перед номером)
     text = re.sub(r"\b[Уу]пр\.(?=\d)", lambda m: _expand(m) + " ", text)
-    return _UPR_RE.sub(_expand, text)
+    text = _UPR_RE.sub(_expand, text)
+    # «пар.9-10» -> «параграф 9-10» (без пробела перед номером)
+    text = re.sub(r"\b[Пп]ар\.(?=\d)", lambda m: _expand_par(m) + " ", text)
+    return _PAR_RE.sub(_expand_par, text)
 
 
 def homework_entries(entries: list[dict]) -> list[HomeworkEntry]:

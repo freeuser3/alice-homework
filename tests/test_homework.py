@@ -261,6 +261,37 @@ def test_format_for_voice_keeps_other_text_unchanged():
     assert "Сириус, урок 12, Задание 1 (а)" in text
 
 
+def test_format_for_voice_expands_par_abbreviation_without_number_space():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    entries = [{"subject": "Биология", "content": "пар.9-10, вопросы, пар.11 прочитать", "attachments": []}]
+    text = format_for_voice(entries, target, today=today)
+    assert "параграф 9-10" in text
+    assert "параграф 11" in text
+    assert "пар." not in text
+
+
+def test_format_for_voice_expands_par_with_space_and_uppercase():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    entries = [
+        {"subject": "История", "content": "Пар. 10 запись в тетради", "attachments": []},
+        {"subject": "Биология", "content": "пар. 8 пересказ", "attachments": []},
+    ]
+    text = format_for_voice(entries, target, today=today)
+    assert "Параграф 10" in text
+    assert "параграф 8" in text
+    assert "пар." not in text
+
+
+def test_format_for_voice_keeps_full_paragraph_word():
+    target = datetime.date(2026, 9, 21)
+    today = datetime.date(2026, 9, 20)
+    entries = [{"subject": "Биология", "content": "прочитать параграф 6 полностью", "attachments": []}]
+    text = format_for_voice(entries, target, today=today)
+    assert "прочитать параграф 6 полностью" in text
+
+
 # --- collect_lessons / format_lessons_for_voice ---
 
 def test_collect_lessons_orders_by_number_returns_first():
