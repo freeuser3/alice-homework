@@ -16,7 +16,7 @@ from aliceio.types import (
 
 from alice_skill.cache import HomeworkCache
 from alice_skill.config import Config, SgoConfig
-from alice_skill.handlers.common import ERROR_TEXT, TIMEOUT_TEXT
+from alice_skill.handlers.common import ERROR_TEXT, GREETING_TEXT, TIMEOUT_TEXT
 from alice_skill.handlers.quiz import QUIZ_NOT_CONFIGURED_TEXT
 from alice_skill.sgo import HomeworkResult
 from alice_skill.skill import create_app
@@ -156,7 +156,8 @@ async def test_router_order_session_new():
     update = _make_update("включи навык", session_new=True)
     resp = await dp.feed_webhook_update(skill, update)
     assert resp is not None
-    assert "три задания" in resp.response.text
+    assert resp.response.text == GREETING_TEXT
+    worker.refresh_now.assert_not_called()
 
 
 @pytest.mark.asyncio

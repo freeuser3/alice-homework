@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from alice_skill.cache import HomeworkCache
-from alice_skill.handlers.common import HINT_TEXT, PREMATURE_TEXT
+from alice_skill.handlers.common import GREETING_TEXT, HINT_TEXT, PREMATURE_TEXT
 from alice_skill.handlers.fallback import handle_fallback
 from alice_skill.handlers.help import handle_help
 from alice_skill.handlers.homework import handle_homework
@@ -55,38 +55,39 @@ def _fake_worker() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_start_handler_returns_homework_from_cache():
+async def test_start_handler_greets_without_homework():
     cache = _fake_cache(_ok_result("На завтра математика."))
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == "На завтра математика."
+    assert result.text == GREETING_TEXT
     worker.refresh_now.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_start_handler_premature_on_empty_cache():
+async def test_start_handler_greets_on_empty_cache():
     cache = _fake_cache(None)
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == PREMATURE_TEXT
-    worker.refresh_now.assert_called_once()
+    assert result.text == GREETING_TEXT
+    worker.refresh_now.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_start_handler_empty_result_returns_empty_text():
+async def test_start_handler_greets_on_empty_result():
     cache = _fake_cache(_empty_result())
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert "отдыхать" in result.text
+    assert result.text == GREETING_TEXT
+    worker.refresh_now.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_start_handler_error_result_premature():
+async def test_start_handler_greets_on_error_result():
     cache = _fake_cache(_error_result())
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == PREMATURE_TEXT
-    worker.refresh_now.assert_called_once()
+    assert result.text == GREETING_TEXT
+    worker.refresh_now.assert_not_called()
 
 
 @pytest.mark.asyncio
