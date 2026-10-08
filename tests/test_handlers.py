@@ -1,11 +1,18 @@
 import asyncio
 import datetime
+import random
 from unittest.mock import MagicMock
 
 import pytest
 
 from alice_skill.cache import HomeworkCache
-from alice_skill.handlers.common import GREETING_TEXT, HINT_TEXT, PREMATURE_TEXT
+from alice_skill.handlers.common import (
+    GREETING_EXAMPLES,
+    GREETING_PREFIX,
+    HINT_TEXT,
+    PREMATURE_TEXT,
+    build_greeting,
+)
 from alice_skill.handlers.fallback import handle_fallback
 from alice_skill.handlers.help import handle_help
 from alice_skill.handlers.homework import handle_homework
@@ -59,7 +66,8 @@ async def test_start_handler_greets_without_homework():
     cache = _fake_cache(_ok_result("На завтра математика."))
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == GREETING_TEXT
+    assert result.text.startswith(GREETING_PREFIX)
+    assert any(example in result.text for example in GREETING_EXAMPLES)
     worker.refresh_now.assert_not_called()
 
 
@@ -68,7 +76,8 @@ async def test_start_handler_greets_on_empty_cache():
     cache = _fake_cache(None)
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == GREETING_TEXT
+    assert result.text.startswith(GREETING_PREFIX)
+    assert any(example in result.text for example in GREETING_EXAMPLES)
     worker.refresh_now.assert_not_called()
 
 
@@ -77,7 +86,8 @@ async def test_start_handler_greets_on_empty_result():
     cache = _fake_cache(_empty_result())
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == GREETING_TEXT
+    assert result.text.startswith(GREETING_PREFIX)
+    assert any(example in result.text for example in GREETING_EXAMPLES)
     worker.refresh_now.assert_not_called()
 
 
@@ -86,8 +96,20 @@ async def test_start_handler_greets_on_error_result():
     cache = _fake_cache(_error_result())
     worker = _fake_worker()
     result = await handle_start(_fake_message(), cache=cache, worker=worker)
-    assert result.text == GREETING_TEXT
+    assert result.text.startswith(GREETING_PREFIX)
+    assert any(example in result.text for example in GREETING_EXAMPLES)
     worker.refresh_now.assert_not_called()
+
+
+def test_build_greeting_is_deterministic_for_fixed_rng():
+    text = build_greeting(rng=random.Random(42))
+    assert text == build_greeting(rng=random.Random(42))
+
+
+def test_build_greeting_contains_exactly_one_example():
+    text = build_greeting(rng=random.Random(42))
+    matched = [example for example in GREETING_EXAMPLES if example in text]
+    assert len(matched) == 1
 
 
 @pytest.mark.asyncio

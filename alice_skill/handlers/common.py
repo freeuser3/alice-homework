@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 from aliceio.types import Response
 
 from alice_skill.cache import HomeworkCache
@@ -9,10 +11,20 @@ PREMATURE_TEXT = "Секунду, заглядываю в дневник. Ска
 HINT_TEXT = "Я умею рассказывать домашку. Скажи «что задали»."
 TIMEOUT_TEXT = "Не успела посмотреть в дневник. Скажи «что задали» ещё раз."
 ERROR_TEXT = "Что-то пошло не так. Попробуй, пожалуйста, ещё раз."
-GREETING_TEXT = (
-    "Привет! Я помогаю с учёбой. Скажи, например, «что задали» — домашку "
-    "или «сколько пятёрок». А «что ты умеешь» покажет все мои команды."
-)
+GREETING_PREFIX = "Привет! Я помогаю с учёбой."
+GREETING_EXAMPLES = [
+    "«что задали»",
+    "«какие завтра уроки»",
+    "«сколько пятёрок»",
+    "«итоги за неделю»",
+    "«спроси по географии»",
+]
+
+
+def build_greeting(rng: random.Random | None = None) -> str:
+    rng = rng or random.Random()
+    example = rng.choice(GREETING_EXAMPLES)
+    return f"{GREETING_PREFIX} Скажи, например, {example}."
 
 
 def answer_from_cache(
