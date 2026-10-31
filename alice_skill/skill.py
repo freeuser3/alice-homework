@@ -28,11 +28,12 @@ from alice_skill.quiz_service import build_quiz
 from alice_skill.quiz_state import QuizSlot, SummarySlot
 from alice_skill.sgo import fetch_homework
 from alice_skill.worker import PrefetchWorker
+from keenetic_skill.webhook import register_keenetic
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(config: Config) -> web.Application:
+def create_homework_dispatcher(config: Config) -> Dispatcher:
     cache = HomeworkCache()
     worker = PrefetchWorker(
         fetch=lambda: fetch_homework(
@@ -45,7 +46,10 @@ def create_app(config: Config) -> web.Application:
     quiz = build_quiz(config)
     slot = QuizSlot()
     summary_slot = SummarySlot()
-    memory = SummaryMemory(config.memory_path, max_weeks=config.memory_max_weeks)
+    memory = SummaryMemory(
+        config.memory_path,
+        max_weeks=config.memory_max_weeks,
+    )
     memory.load()
 
     dp = Dispatcher(
@@ -59,7 +63,6 @@ def create_app(config: Config) -> web.Application:
     )
     dp.update.middleware(LoggingMiddleware())
 
-    # Router order matters: start → homework → quiz → more → summary → ...
     dp.include_router(start_router)
     dp.include_router(homework_router)
     dp.include_router(quiz_router)
@@ -92,13 +95,29 @@ def create_app(config: Config) -> web.Application:
         logger.exception("unhandled error in handler")
         return ERROR_TEXT
 
-    skill = Skill(skill_id=config.skill_id)
-    request_handler = OneSkillAiohttpRequestHandler(dispatcher=dp, skill=skill)
+    return dp
 
+
+async def _health(request: web.Request) -> web.Response:
+    return web.Response(text="ok")
+
+
+def create_app(config: Config) -> web.Application:
     app = web.Application()
+    dp = create_homework_dispatcher(config)
+    skill = Skill(skill_id=config.skill_id)
+    request_handler = OneSkillAiohttpRequestHandler(
+        dispatcher=dp,
+        skill=skill,
+    )
     request_handler.register(app, path="/alice")
     setup_application(app, dp, skill=skill)
-    app["dispatcher"] = dp  # expose for tests
+
+    if config.keenetic is not None:
+        register_keenetic(app, config.keenetic)
+
+    app.router.add_get("/health", _health)
+    app["dispatcher"] = dp
     return app
 
 
