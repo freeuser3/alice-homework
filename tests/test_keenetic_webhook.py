@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -50,17 +51,37 @@ async def test_keenetic_endpoint_logs_and_responds(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_keenetic_invalid_json_is_logged_as_raw(tmp_path):
+async def test_keenetic_invalid_json_logs_metadata_only(tmp_path):
+    app, log_path = _make_app(tmp_path)
+    payload = b'{"access_token": "secret"'
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/keenetic",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status == 200
+    text = log_path.read_text(encoding="utf-8")
+    assert "secret" not in text
+    record = json.loads(text.splitlines()[0])
+    assert "_raw" not in record["body"]
+    assert record["body"]["_raw_len"] == len(payload)
+    assert record["body"]["raw_sha256"] == hashlib.sha256(payload).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_keenetic_invalid_utf8_body_is_accepted(tmp_path):
     app, log_path = _make_app(tmp_path)
     async with TestClient(TestServer(app)) as client:
         resp = await client.post(
             "/keenetic",
-            data="not json",
+            data=b"\xff\xfe",
             headers={"Content-Type": "application/json"},
         )
         assert resp.status == 200
     record = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
-    assert record["body"] == {"_raw": "not json"}
+    assert record["body"]["_raw_len"] == 2
+    assert "raw_sha256" in record["body"]
 
 
 @pytest.mark.asyncio

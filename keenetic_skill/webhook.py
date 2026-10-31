@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,11 +34,15 @@ def _record(request: web.Request, body: Any) -> dict:
 
 async def handle_keenetic(request: web.Request) -> web.Response:
     config: KeeneticConfig = request.app["keenetic_config"]
-    raw = await request.text()
+    raw_bytes = await request.read()
+    raw = raw_bytes.decode("utf-8", errors="replace")
     try:
         body: Any = json.loads(raw) if raw else {}
     except ValueError:
-        body = {"_raw": raw}
+        body = {
+            "_raw_len": len(raw_bytes),
+            "raw_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+        }
     try:
         await asyncio.to_thread(
             write_record,
@@ -50,9 +56,9 @@ async def handle_keenetic(request: web.Request) -> web.Response:
 
 def register_keenetic(app: web.Application, config: KeeneticConfig) -> None:
     directory = Path(config.log_path).expanduser().parent
-    if not directory.exists():
+    if not directory.exists() or not os.access(directory, os.W_OK):
         logger.warning(
-            "keenetic log directory does not exist: %s",
+            "keenetic log directory is missing or not writable: %s",
             directory,
         )
     app["keenetic_config"] = config

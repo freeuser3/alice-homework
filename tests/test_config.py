@@ -209,7 +209,9 @@ def test_load_config_memory_from_file_and_env(tmp_path, monkeypatch):
     assert cfg.memory_max_weeks == 6
 
 
-def test_load_config_keenetic_optional(tmp_path):
+def test_load_config_keenetic_optional(tmp_path, monkeypatch):
+    monkeypatch.delenv("KEENETIC_SKILL_ID", raising=False)
+    monkeypatch.delenv("KEENETIC_LOG_PATH", raising=False)
     path = _write_config(tmp_path, {
         "sgo": {"login": "u", "password": "p", "school": "s"},
         "skill_id": "sid",
@@ -218,7 +220,9 @@ def test_load_config_keenetic_optional(tmp_path):
     assert cfg.keenetic is None
 
 
-def test_load_config_keenetic_block(tmp_path):
+def test_load_config_keenetic_block(tmp_path, monkeypatch):
+    monkeypatch.delenv("KEENETIC_SKILL_ID", raising=False)
+    monkeypatch.delenv("KEENETIC_LOG_PATH", raising=False)
     path = _write_config(tmp_path, {
         "sgo": {"login": "u", "password": "p", "school": "s"},
         "skill_id": "sid",

@@ -36,20 +36,31 @@ def _short(value: Any) -> str:
     return text if len(text) <= 16 else text[:8] + "…" + text[-4:]
 
 
-def _extract(record: dict, full: bool) -> dict:
-    body = record.get("body") or {}
-    session = body.get("session") or {}
-    user = session.get("user") or {}
-    application = session.get("application") or {}
-    meta = body.get("meta") or {}
-    request = body.get("request") or {}
-    fmt = (lambda v: str(v) if v else "-") if full else _short
+def _as_dict(value: Any) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _combo_value(value: Any) -> Any:
+    try:
+        hash(value)
+    except TypeError:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return value
+
+
+def _extract(record: dict) -> dict:
+    body = _as_dict(record.get("body"))
+    session = _as_dict(body.get("session"))
+    user = _as_dict(session.get("user"))
+    application = _as_dict(session.get("application"))
+    meta = _as_dict(body.get("meta"))
+    request = _as_dict(body.get("request"))
     return {
         "ts": record.get("ts", "-"),
-        "user_id": fmt(user.get("user_id")),
-        "app_id": fmt(application.get("application_id")),
-        "legacy_user_id": fmt(session.get("user_id")),
-        "client_id": fmt(meta.get("client_id")),
+        "user_id": user.get("user_id"),
+        "app_id": application.get("application_id"),
+        "legacy_user_id": session.get("user_id"),
+        "client_id": meta.get("client_id"),
         "new": session.get("new"),
         "command": request.get("command", "-"),
         "original": request.get("original_utterance", "-"),
@@ -68,32 +79,48 @@ def report(log_path: str | Path, full: bool = False) -> int:
             if not line:
                 continue
             try:
-                rows.append(_extract(json.loads(line), full))
+                record = json.loads(line)
             except ValueError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            try:
+                rows.append(_extract(record))
+            except (AttributeError, TypeError, ValueError):
                 continue
     if not rows:
         print("в логе нет записей")
         return 1
+    fmt = (lambda v: str(v) if v else "-") if full else _short
     headers = [
         "ts", "user_id", "app_id", "legacy_user_id", "client_id",
         "new", "command", "original",
     ]
+    display_rows = []
+    for row in rows:
+        display = dict(row)
+        for key in ("user_id", "app_id", "legacy_user_id", "client_id"):
+            display[key] = fmt(row[key])
+        display_rows.append(display)
     widths = {
-        h: max(len(h), *(len(str(row[h])) for row in rows)) for h in headers
+        h: max(len(h), *(len(str(row[h])) for row in display_rows))
+        for h in headers
     }
     print("  ".join(h.ljust(widths[h]) for h in headers))
     print("  ".join("-" * widths[h] for h in headers))
-    for row in rows:
+    for row in display_rows:
         print("  ".join(str(row[h]).ljust(widths[h]) for h in headers))
     combos = {}
     for row in rows:
-        key = (row["user_id"], row["app_id"], row["client_id"])
+        key = tuple(
+            _combo_value(row[k]) for k in ("user_id", "app_id", "client_id")
+        )
         combos[key] = combos.get(key, 0) + 1
     print("\nРазличных комбинаций user_id / app_id / client_id:", len(combos))
     for (user_id, app_id, client_id), count in combos.items():
         print(
-            f"  user_id={user_id}  app_id={app_id}  "
-            f"client_id={client_id}  запросов={count}"
+            f"  user_id={fmt(user_id)}  app_id={fmt(app_id)}  "
+            f"client_id={fmt(client_id)}  запросов={count}"
         )
     return 0
 
