@@ -342,7 +342,7 @@ cd ~/alice-homework
 pytest -v
 ```
 
-Полный набор (**273 теста**) покрывает:
+Полный набор (**276 тестов**) покрывает:
 
 - `tests/test_config.py` — загрузка конфига, приоритет env-переменных, обязательные поля;
 - `tests/test_homework.py` — дни, сбор домашки, все правила голосового формата (15 тестов);
@@ -387,7 +387,7 @@ alice-homework/
 │   ├── config.py          # KeeneticConfig и разбор секции
 │   ├── probe.py           # redact, JSONL-лог, CLI report
 │   └── webhook.py         # aiohttp-обработчик /keenetic
-├── tests/                 # 19 файлов, 273 теста
+├── tests/                 # 19 файлов, 276 тестов
 ├── scripts/self_check.py  # самопроверка навыка перед/после обновления
 ├── config.example.json    # шаблон настроек (безопасный, в git)
 ├── requirements.txt
