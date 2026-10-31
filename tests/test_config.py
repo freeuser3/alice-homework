@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from alice_skill.config import Config, load_config
+from keenetic_skill.config import KeeneticConfig
 
 
 def _write_config(tmp_path: Path, data: dict) -> Path:
@@ -206,3 +207,63 @@ def test_load_config_memory_from_file_and_env(tmp_path, monkeypatch):
     cfg = load_config(path)
     assert cfg.memory_path == "/tmp/mem.json"
     assert cfg.memory_max_weeks == 6
+
+
+def test_load_config_keenetic_optional(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+    })
+    cfg = load_config(path)
+    assert cfg.keenetic is None
+
+
+def test_load_config_keenetic_block(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "keenetic": {"skill_id": "kid", "log_path": "var/keenetic.log"},
+    })
+    cfg = load_config(path)
+    assert cfg.keenetic == KeeneticConfig(
+        skill_id="kid",
+        log_path="var/keenetic.log",
+    )
+
+
+def test_load_config_keenetic_requires_skill_id(tmp_path):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "keenetic": {},
+    })
+    with pytest.raises(ValueError, match="keenetic.skill_id"):
+        load_config(path)
+
+
+def test_load_config_keenetic_env_overrides(tmp_path, monkeypatch):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+        "keenetic": {"skill_id": "kid"},
+    })
+    monkeypatch.setenv("KEENETIC_SKILL_ID", "env-kid")
+    monkeypatch.setenv("KEENETIC_LOG_PATH", "/tmp/keenetic.log")
+    cfg = load_config(path)
+    assert cfg.keenetic == KeeneticConfig(
+        skill_id="env-kid",
+        log_path="/tmp/keenetic.log",
+    )
+
+
+def test_load_config_keenetic_from_env_only(tmp_path, monkeypatch):
+    path = _write_config(tmp_path, {
+        "sgo": {"login": "u", "password": "p", "school": "s"},
+        "skill_id": "sid",
+    })
+    monkeypatch.setenv("KEENETIC_SKILL_ID", "env-kid")
+    cfg = load_config(path)
+    assert cfg.keenetic == KeeneticConfig(
+        skill_id="env-kid",
+        log_path="keenetic.log",
+    )
