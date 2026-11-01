@@ -1,6 +1,4 @@
 import datetime
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,7 +21,6 @@ from alice_skill.handlers.quiz import QUIZ_NOT_CONFIGURED_TEXT
 from alice_skill.sgo import HomeworkResult
 from alice_skill.skill import create_app
 from alice_skill.worker import PrefetchWorker
-from keenetic_skill.config import KeeneticConfig
 
 
 def _make_update(command: str = "", *, session_new: bool = False) -> Update:
@@ -55,10 +52,6 @@ def _make_config(skill_id: str = "test-skill") -> Config:
     return Config(
         sgo=SgoConfig(login="u", password="p", school="s"),
         skill_id=skill_id,
-        keenetic=KeeneticConfig(
-            skill_id="test-keenetic",
-            log_path=str(_KEENETIC_LOG),
-        ),
     )
 
 
@@ -66,8 +59,6 @@ def _fill_cache(dp, cache, worker):
     dp.workflow_data["cache"] = cache
     dp.workflow_data["worker"] = worker
 
-
-_KEENETIC_LOG = Path(tempfile.mkdtemp(prefix="alice-keenetic-test-")) / "keenetic.log"
 
 _free_app_state: list = []
 
@@ -193,11 +184,3 @@ async def test_router_order_quiz_before_fallback_but_after_homework():
     resp = await dp.feed_webhook_update(skill, update)
     assert resp is not None
     assert resp.response.text == QUIZ_NOT_CONFIGURED_TEXT
-
-
-def test_keenetic_and_health_routes_registered():
-    app, _ = _free_app(_make_config)
-    paths = {route.resource.canonical for route in app.router.routes()}
-    assert "/alice" in paths
-    assert "/keenetic" in paths
-    assert "/health" in paths
